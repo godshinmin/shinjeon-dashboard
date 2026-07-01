@@ -1166,6 +1166,178 @@ const ChangePwModal = ({ onClose }) => {
   );
 };
 
+
+// ═══════════════════════════════════════════════════
+//  설정 모달 (비밀번호 변경 + 반 관리 + 담당 건축사)
+// ═══════════════════════════════════════════════════
+const SettingsModal = ({ students, setStudents, pw, onPwChange, customClasses, setCustomClasses, classTeachers, setClassTeachers, onClose }) => {
+  const [tab, setTab] = useState("class");
+
+  // ── 비밀번호 ────────────────────────────────────
+  const [curPw, setCurPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [conPw, setConPw] = useState("");
+  const [pwMsg, setPwMsg] = useState("");
+
+  const savePw = async () => {
+    if (curPw !== pw)      { setPwMsg("현재 비밀번호가 틀렸어요"); return; }
+    if (newPw.length < 4)  { setPwMsg("새 비밀번호는 4자 이상이에요"); return; }
+    if (newPw !== conPw)   { setPwMsg("새 비밀번호가 일치하지 않아요"); return; }
+    try { localStorage.setItem("sj_teacher_pw", newPw); } catch {}
+    try {
+      await fetch(`${SB_URL}/rest/v1/settings`, {
+        method:"POST",
+        headers:{...H,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
+        body:JSON.stringify({key:"teacher_password",value:newPw}),
+      });
+    } catch {}
+    onPwChange(newPw);
+    setPwMsg("✅ 비밀번호가 변경됐어요!");
+    setTimeout(()=>{ setCurPw(""); setNewPw(""); setConPw(""); setPwMsg(""); }, 2000);
+  };
+
+  // ── 반 관리 ──────────────────────────────────────
+  const [newCls,   setNewCls]   = useState("");
+  const [renaming, setRenaming] = useState(null);
+  const [clsMsg,   setClsMsg]   = useState("");
+
+  const allCls = useMemo(()=>[...new Set([
+    ...students.map(s=>s.info.className),
+    ...customClasses,
+  ])].sort((a,b)=>a.localeCompare(b,"ko")), [students, customClasses]);
+
+  const addCls = () => {
+    const name = newCls.trim();
+    if (!name) return;
+    if (allCls.includes(name)) { setClsMsg("이미 있는 반 이름이에요"); return; }
+    const updated = [...customClasses, name];
+    setCustomClasses(updated);
+    try { localStorage.setItem("sj_custom_classes", JSON.stringify(updated)); } catch {}
+    setNewCls(""); setClsMsg("✅ 추가됐어요!"); setTimeout(()=>setClsMsg(""), 2000);
+  };
+
+  const doRename = () => {
+    if (!renaming) return;
+    const { old: oldName, next } = renaming;
+    if (!next.trim() || next.trim() === oldName) { setRenaming(null); return; }
+    setStudents(prev => prev.map(s =>
+      s.info.className === oldName ? {...s, info:{...s.info, className:next.trim()}} : s
+    ));
+    const updCls = customClasses.map(c=>c===oldName?next.trim():c);
+    setCustomClasses(updCls);
+    const updTeacher = {...classTeachers};
+    if (updTeacher[oldName]) { updTeacher[next.trim()] = updTeacher[oldName]; delete updTeacher[oldName]; }
+    setClassTeachers(updTeacher);
+    try { localStorage.setItem("sj_custom_classes", JSON.stringify(updCls)); } catch {}
+    try { localStorage.setItem("sj_class_teachers", JSON.stringify(updTeacher)); } catch {}
+    setRenaming(null); setClsMsg(`✅ "${oldName}" → "${next.trim()}"`); setTimeout(()=>setClsMsg(""), 2000);
+  };
+
+  const deleteCls = (cls) => {
+    const cnt = students.filter(s=>s.info.className===cls).length;
+    if (cnt > 0) { setClsMsg(`수강생 ${cnt}명이 있어 삭제 불가`); setTimeout(()=>setClsMsg(""), 2000); return; }
+    const updCls = customClasses.filter(c=>c!==cls);
+    setCustomClasses(updCls);
+    try { localStorage.setItem("sj_custom_classes", JSON.stringify(updCls)); } catch {}
+    setClsMsg("삭제됐어요"); setTimeout(()=>setClsMsg(""), 2000);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:C.card,borderRadius:20,width:"100%",maxWidth:460,maxHeight:"88vh",overflow:"auto",boxShadow:"0 24px 80px #0008"}}>
+        <div style={{background:C.navy,borderRadius:"20px 20px 0 0",padding:"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{fontSize:16,fontWeight:900,color:"#fff"}}>⚙️ 설정</div>
+          <button onClick={onClose} style={{background:"#ffffff22",border:"none",borderRadius:8,color:"#fff",padding:"5px 12px",cursor:"pointer",fontWeight:700}}>닫기</button>
+        </div>
+        <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
+          {[["class","🏛 반 관리"],["teacher","👨‍🏫 담당 건축사"],["pw","🔑 비밀번호"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"12px",border:"none",background:"none",cursor:"pointer",fontWeight:tab===k?800:400,color:tab===k?C.blue:C.textLight,borderBottom:`2.5px solid ${tab===k?C.blue:"transparent"}`,fontSize:12}}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <div style={{padding:24}}>
+
+          {/* 반 관리 */}
+          {tab==="class" && (<>
+            {clsMsg&&<div style={{background:clsMsg.startsWith("✅")?"#ECFDF5":"#FEF2F2",borderRadius:10,padding:"9px 14px",fontSize:12,color:clsMsg.startsWith("✅")?C.success:C.danger,marginBottom:14}}>{clsMsg}</div>}
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:8}}>새 반 추가</div>
+              <div style={{display:"flex",gap:8}}>
+                <input value={newCls} onChange={e=>setNewCls(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCls()} placeholder="예: W반, 특별반, 주말반..."
+                  style={{flex:1,padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none"}}/>
+                <button onClick={addCls} style={{background:C.blue,color:"#fff",border:"none",borderRadius:9,padding:"10px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>추가</button>
+              </div>
+            </div>
+            <div style={{fontSize:13,fontWeight:700,color:C.navy,marginBottom:8}}>반 목록</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:320,overflowY:"auto"}}>
+              {allCls.map(cls=>{
+                const cnt=students.filter(s=>s.info.className===cls).length;
+                const isRen=renaming?.old===cls;
+                return (
+                  <div key={cls} style={{display:"flex",alignItems:"center",gap:8,background:C.bg,borderRadius:9,padding:"9px 12px",border:`1px solid ${C.border}`}}>
+                    {isRen ? (<>
+                      <input value={renaming.next} onChange={e=>setRenaming(r=>({...r,next:e.target.value}))}
+                        onKeyDown={e=>{if(e.key==="Enter")doRename();if(e.key==="Escape")setRenaming(null);}} autoFocus
+                        style={{flex:1,padding:"6px 10px",borderRadius:7,border:`1.5px solid ${C.blue}`,fontSize:13,outline:"none"}}/>
+                      <button onClick={doRename} style={{background:C.success,color:"#fff",border:"none",borderRadius:7,padding:"6px 12px",fontWeight:700,cursor:"pointer",fontSize:12}}>저장</button>
+                      <button onClick={()=>setRenaming(null)} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:"6px 10px",cursor:"pointer",fontSize:12,color:C.textMid}}>취소</button>
+                    </>) : (<>
+                      <div style={{flex:1}}>
+                        <span style={{fontWeight:700,fontSize:13,color:C.text}}>{cls}</span>
+                        <span style={{fontSize:11,color:C.textLight,marginLeft:8}}>{cnt}명</span>
+                        {classTeachers[cls]&&<span style={{fontSize:10,color:C.textMid,marginLeft:8}}>👨‍🏫 {classTeachers[cls]}</span>}
+                      </div>
+                      <button onClick={()=>setRenaming({old:cls,next:cls})} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:11,color:C.textMid}}>✏️ 변경</button>
+                      {cnt===0&&<button onClick={()=>deleteCls(cls)} style={{background:"none",border:`1px solid ${C.danger}44`,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:11,color:C.danger}}>삭제</button>}
+                    </>)}
+                  </div>
+                );
+              })}
+            </div>
+          </>)}
+
+          {/* 담당 건축사 */}
+          {tab==="teacher" && (<>
+            <div style={{fontSize:12,color:C.textMid,marginBottom:14}}>각 반의 담당 건축사를 입력하세요</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:400,overflowY:"auto"}}>
+              {allCls.map(cls=>(
+                <div key={cls} style={{display:"flex",alignItems:"center",gap:10,background:C.bg,borderRadius:9,padding:"9px 12px",border:`1px solid ${C.border}`}}>
+                  <span style={{fontWeight:700,fontSize:13,color:C.text,width:72,flexShrink:0}}>{cls}</span>
+                  <input value={classTeachers[cls]||""} onChange={e=>{
+                    const updated={...classTeachers,[cls]:e.target.value};
+                    setClassTeachers(updated);
+                    try{localStorage.setItem("sj_class_teachers",JSON.stringify(updated));}catch{}
+                  }} placeholder="건축사 이름"
+                    style={{flex:1,padding:"7px 10px",borderRadius:7,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none"}}/>
+                  <span style={{fontSize:11,color:C.textLight,flexShrink:0}}>{students.filter(s=>s.info.className===cls).length}명</span>
+                </div>
+              ))}
+            </div>
+          </>)}
+
+          {/* 비밀번호 */}
+          {tab==="pw" && (<>
+            {pwMsg&&<div style={{background:pwMsg.startsWith("✅")?"#ECFDF5":"#FEF2F2",borderRadius:10,padding:"9px 14px",fontSize:12,color:pwMsg.startsWith("✅")?C.success:C.danger,marginBottom:14}}>{pwMsg}</div>}
+            <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:20}}>
+              {[["현재 비밀번호",curPw,setCurPw],["새 비밀번호",newPw,setNewPw],["새 비밀번호 확인",conPw,setConPw]].map(([lbl,val,set])=>(
+                <div key={lbl}>
+                  <label style={{fontSize:12,fontWeight:700,color:C.textMid,display:"block",marginBottom:5}}>{lbl}</label>
+                  <input type="password" value={val} onChange={e=>set(e.target.value)} onKeyDown={e=>e.key==="Enter"&&savePw()}
+                    style={{width:"100%",padding:"11px 14px",borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              ))}
+            </div>
+            <button onClick={savePw} style={{width:"100%",background:C.navy,color:"#fff",border:"none",borderRadius:11,padding:13,fontWeight:800,cursor:"pointer",fontSize:14}}>비밀번호 변경</button>
+          </>)}
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ═══════════════════════════════════════════════════
 //  공유 모달
 // ═══════════════════════════════════════════════════
