@@ -411,7 +411,7 @@ const DrawingUpload = ({studentId, subjectId, examKey, url, onUpload}) => {
 // ═══════════════════════════════════════════════════
 //  인적사항 폼
 // ═══════════════════════════════════════════════════
-const InfoForm = ({info,onChange}) => {
+const InfoForm = ({info,onChange,customClasses=[]}) => {
   const upd=(k,v)=>onChange({...info,[k]:v});
   const toggleSess=sid=>{
     const cur=info.passedSessions||[];
@@ -426,7 +426,7 @@ const InfoForm = ({info,onChange}) => {
             {key==="className"
               ? <select value={info[key]} onChange={e=>upd(key,e.target.value)}
                   style={{width:"100%",padding:"9px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none"}}>
-                  {CLASSES.map(c=><option key={c}>{c}</option>)}
+                  {[...CLASSES,...customClasses.filter(c=>!CLASSES.includes(c))].map(c=><option key={c}>{c}</option>)}
                 </select>
               : <input value={info[key]||""} onChange={e=>upd(key,e.target.value)} placeholder={lbl==="년생"?"예: 92년생":lbl}
                   style={{width:"100%",padding:"9px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
@@ -1007,9 +1007,9 @@ const ReportView = ({student,students,onBack,onShare}) => {
 // ═══════════════════════════════════════════════════
 //  로그인 화면 (선생님 전용)
 // ═══════════════════════════════════════════════════
-const DEFAULT_PW = "신전2025"; // 초기 비밀번호
+const DEFAULT_PW = "0000"; // 초기 비밀번호
 
-const LoginScreen = ({ onLogin }) => {
+const LoginScreen = ({ onLogin, defaultPw }) => {
   const [pw, setPw] = useState("");
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1018,7 +1018,7 @@ const LoginScreen = ({ onLogin }) => {
   const tryLogin = async () => {
     if (!pw) return;
     setLoading(true);
-    let correctPw = DEFAULT_PW;
+    let correctPw = defaultPw || DEFAULT_PW;
     try {
       const r = await fetch(`${SB_URL}/rest/v1/settings?key=eq.teacher_password&select=value`, { headers: H });
       const rows = await r.json();
@@ -1109,7 +1109,7 @@ const ChangePwModal = ({ onClose }) => {
     if (next.length < 4) { setMsg("비밀번호는 4자 이상이어야 해요"); return; }
     if (next !== confirm) { setMsg("새 비밀번호가 일치하지 않아요"); return; }
 
-    let correctPw = DEFAULT_PW;
+    let correctPw = defaultPw || DEFAULT_PW;
     try {
       const r = await fetch(`${SB_URL}/rest/v1/settings?key=eq.teacher_password&select=value`, { headers: H });
       const rows = await r.json();
@@ -1202,6 +1202,28 @@ export default function App() {
   const [classFilter, setClassFilter] = useState("전체");
   const [searchQuery, setSearchQuery] = useState("");
   const saveTimers = useRef({});
+
+  // ── 커스텀 반 + 비밀번호 로드 ─────────────────────
+  useEffect(()=>{
+    // 커스텀 반 로드
+    try {
+      const saved = localStorage.getItem("sj_custom_classes");
+      if (saved) setCustomClasses(JSON.parse(saved));
+    } catch {}
+    // 비밀번호 로드
+    try {
+      const saved = localStorage.getItem("sj_teacher_pw");
+      if (saved) setCurrentPw(saved);
+    } catch {}
+    // Supabase에서 비밀번호 로드
+    (async()=>{
+      try {
+        const r = await fetch(`${SB_URL}/rest/v1/settings?key=eq.teacher_password&select=value`,{headers:H});
+        const d = await r.json();
+        if(d?.length&&d[0].value){ setCurrentPw(d[0].value); localStorage.setItem("sj_teacher_pw",d[0].value); }
+      } catch {}
+    })();
+  },[]);
 
   // ── 초기 로드 ────────────────────────────────────
   useEffect(()=>{
@@ -1324,11 +1346,22 @@ export default function App() {
   const studentAttend = student?.attend || {};
 
   // ── 로그인 체크 ──────────────────────────────────
-  if(!isLoggedIn) return <LoginScreen onLogin={handleLogin}/>;
+  if(!isLoggedIn) return <LoginScreen onLogin={handleLogin} defaultPw={currentPw}/>;
 
   // ── 결과서 뷰 ────────────────────────────────────
   if(view==="report"&&student) return (
     <div style={{minHeight:"100vh",background:C.bg,padding:"24px 16px"}}>
+      {showSettings&&(
+        <SettingsModal
+          students={students}
+          setStudents={setStudents}
+          pw={currentPw}
+          onPwChange={pw=>setCurrentPw(pw)}
+          customClasses={customClasses}
+          setCustomClasses={setCustomClasses}
+          onClose={()=>setShowSettings(false)}
+        />
+      )}
       {shareModal&&<ShareModal studentId={shareModal.id} studentName={shareModal.name} onClose={()=>setShareModal(null)}/>}
       <ReportView student={student} students={students} onBack={()=>setView("detail")} onShare={()=>setShareModal({id:student.id,name:student.info.name})}/>
     </div>
@@ -1345,6 +1378,17 @@ export default function App() {
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'Noto Sans KR',sans-serif"}}>
+      {showSettings&&(
+        <SettingsModal
+          students={students}
+          setStudents={setStudents}
+          pw={currentPw}
+          onPwChange={pw=>setCurrentPw(pw)}
+          customClasses={customClasses}
+          setCustomClasses={setCustomClasses}
+          onClose={()=>setShowSettings(false)}
+        />
+      )}
       {shareModal&&<ShareModal studentId={shareModal.id} studentName={shareModal.name} onClose={()=>setShareModal(null)}/>}
       {showChangePw&&<ChangePwModal onClose={()=>setShowChangePw(false)}/>}
       {showRankings&&<RankingsView students={students} onClose={()=>setShowRankings(false)}/>}
@@ -1435,7 +1479,7 @@ export default function App() {
               <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="🔍 이름 검색..."
                 style={{padding:"8px 14px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",minWidth:150}}/>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {["전체","A반","B반","C반","D반","E반","F반","G반","H반","I반","J반","K반","L반","M반","N반","O반","P반","Q반","R반","S반","U반","V반","개인과외"].map(cls=>{
+                {(["전체",...[...new Set([...students.map(s=>s.info.className),...customClasses])].sort((a,b)=>a.localeCompare(b,"ko"))]).map(cls=>{
                   const cnt = cls==="전체" ? students.length : students.filter(s=>s.info.className===cls).length;
                   return (
                     <button key={cls} onClick={()=>setClassFilter(cls)} style={{
@@ -1537,7 +1581,7 @@ export default function App() {
             {showInfo&&(
               <div style={{background:C.card,borderRadius:14,padding:24,border:`1.5px solid ${C.accent}60`,marginBottom:20}}>
                 <SecTitle>👤 수강생 인적사항</SecTitle>
-                <InfoForm info={student.info} onChange={updInfo}/>
+                <InfoForm info={student.info} onChange={updInfo} customClasses={customClasses}/>
               </div>
             )}
 
