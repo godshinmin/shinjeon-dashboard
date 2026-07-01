@@ -227,6 +227,17 @@ const SEED_STUDENTS = [
   {name:"김성준",cls:"개인과외",p:[]},
 ]
 
+
+// ── 담당 건축사 기본 매핑 ─────────────────────────────
+const DEFAULT_TEACHERS = {
+  "A반":"신민철","B반":"이서연","C반":"전재환","D반":"이유정",
+  "E반":"전재환","F반":"최유정","G반":"전재환","H반":"이영미",
+  "I반":"전재환","J반":"이서연","K반":"이서연","L반":"이영미",
+  "M반":"전재환","N반":"신민철","O반":"신민철","P반":"이서연",
+  "Q반":"최유정","R반":"이서연","S반":"이영미","U반":"이서연",
+  "V반":"신민철","개인과외":"조소민/배기태/신민철",
+};
+
 const getAllSubIds = () => SESSIONS.flatMap(s=>s.subjects.map(sub=>sub.id));
 
 // ═══════════════════════════════════════════════════
@@ -1210,6 +1221,11 @@ export default function App() {
       const saved = localStorage.getItem("sj_custom_classes");
       if (saved) setCustomClasses(JSON.parse(saved));
     } catch {}
+    // 담당 건축사 매핑 로드
+    try {
+      const saved = localStorage.getItem("sj_class_teachers");
+      if (saved) setClassTeachers({...DEFAULT_TEACHERS,...JSON.parse(saved)});
+    } catch {}
     // 비밀번호 로드
     try {
       const saved = localStorage.getItem("sj_teacher_pw");
@@ -1338,6 +1354,22 @@ export default function App() {
   const visibleSess = student ? SESSIONS.filter(s=>!s.subjects.every(sub=>isPassed(sub.id,student.info))) : SESSIONS;
   const curSubData  = student?.subjects?.[activeSub] || makeSubData();
   const hwDone      = calcHw(curSubData);
+  // 담당 건축사 목록 (동적)
+  const teacherList = useMemo(()=>{
+    const teachers = new Set(["전체"]);
+    students.forEach(s=>{
+      const t = classTeachers[s.info.className];
+      if(t) teachers.add(t);
+    });
+    return [...teachers];
+  },[students,classTeachers]);
+
+  // 담당 건축사 필터 적용
+  const filteredByTeacher = useMemo(()=>{
+    if(teacherFilter==="전체") return students;
+    return students.filter(s=>classTeachers[s.info.className]===teacherFilter);
+  },[students,classTeachers,teacherFilter]);
+
   const sessSummary = s => {
     const ids=getAllSubIds().filter(sid=>!isPassed(sid,s.info));
     if(!ids.length) return 100;
@@ -1359,6 +1391,8 @@ export default function App() {
           onPwChange={pw=>setCurrentPw(pw)}
           customClasses={customClasses}
           setCustomClasses={setCustomClasses}
+          classTeachers={classTeachers}
+          setClassTeachers={t=>{setClassTeachers(t);try{localStorage.setItem("sj_class_teachers",JSON.stringify(t));}catch{}}}
           onClose={()=>setShowSettings(false)}
         />
       )}
@@ -1386,6 +1420,8 @@ export default function App() {
           onPwChange={pw=>setCurrentPw(pw)}
           customClasses={customClasses}
           setCustomClasses={setCustomClasses}
+          classTeachers={classTeachers}
+          setClassTeachers={t=>{setClassTeachers(t);try{localStorage.setItem("sj_class_teachers",JSON.stringify(t));}catch{}}}
           onClose={()=>setShowSettings(false)}
         />
       )}
@@ -1474,6 +1510,25 @@ export default function App() {
                 </div>
               )}
             </div>}
+            {/* 담당 건축사 필터 */}
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.textMid,marginBottom:6,letterSpacing:.5}}>담당 건축사</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {teacherList.map(t=>(
+                  <button key={t} onClick={()=>{setTeacherFilter(t);setClassFilter("전체");}}
+                    style={{padding:"5px 13px",borderRadius:20,
+                      border:`1.5px solid ${teacherFilter===t?C.accent:C.border}`,
+                      background:teacherFilter===t?C.accent:C.card,
+                      color:teacherFilter===t?C.navy:C.textMid,
+                      fontWeight:teacherFilter===t?800:400,cursor:"pointer",fontSize:12}}>
+                    {t}{t!=="전체"&&<span style={{fontSize:10,opacity:.7,marginLeft:4}}>
+                      {students.filter(s=>classTeachers[s.info.className]===t).length}명
+                    </span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* 검색 + 반 필터 */}
             <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
               <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="🔍 이름 검색..."
@@ -1506,7 +1561,7 @@ export default function App() {
               </div>
             )}
             {(()=>{
-              const filtered = students
+              const filtered = filteredByTeacher
                 .filter(s => classFilter==="전체" || s.info.className===classFilter)
                 .filter(s => !searchQuery || s.info.name.includes(searchQuery))
                 .sort((a,b)=>a.info.className.localeCompare(b.info.className)||a.info.name.localeCompare(b.info.name,"ko"));
@@ -1536,6 +1591,9 @@ export default function App() {
                           <span style={{background:C.navy,color:C.accent,borderRadius:5,padding:"1px 6px",fontSize:10,fontWeight:700,marginRight:6}}>{s.info.className}</span>
                           {s.info.name}
                         </div>
+                        {classTeachers[s.info.className]&&(
+                          <div style={{fontSize:10,color:C.textLight,marginTop:2}}>👨‍🏫 {classTeachers[s.info.className]}</div>
+                        )}
                         {s.info.birthYear&&<div style={{fontSize:11,color:C.textLight}}>{s.info.birthYear}</div>}
                         {s.info.goal&&<div style={{fontSize:10,color:C.accent}}>🎯 {s.info.goal}</div>}
                       </div>
