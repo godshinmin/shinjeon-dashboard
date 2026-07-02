@@ -1,4 +1,3 @@
-// v3.0 - 반별수업일정 + 출석리스트 + 청강보강
 import { useState, useEffect, useRef, useMemo } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 
@@ -360,7 +359,6 @@ function SettingsModal({students,setStudents,storedPw,onPwChange,customClasses,s
   const [newCls,setNewCls]=useState(""); const [clsMsg,setClsMsg]=useState(""); const [renamingClsIdx,setRenamingClsIdx]=useState(null);
   const [newTeacher,setNewTeacher]=useState(""); const [teacherMsg,setTeacherMsg]=useState(""); const [editingTeacher,setEditingTeacher]=useState(null);
 
-  const allCls=useMemo(()=>[...new Set([...students.map(s=>s.info.className),...customClasses])].sort((a,b)=>a.localeCompare(b,"ko")),[students,customClasses]);
 
   const savePw=async()=>{
     if(pwFields.cur!==(storedPw||DEFAULT_PW)){setPwMsg("현재 비밀번호가 틀렸어요");return;}
