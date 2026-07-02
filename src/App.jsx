@@ -42,6 +42,9 @@ const CLASSES_AZ = Array.from({length:26},(_,i)=>String.fromCharCode(65+i)+"반"
 const DEFAULT_PW = "0000";
 const SUBJECTS_ALL = ["분석조닝문제","배치문제","평면문제","구조문제","단면문제","전반적으로 어려움"];
 const CHART_COLORS = ["#2B58B8","#C8A655","#1E9E6B","#DC2626","#7C3AED","#D97706","#059669","#0EA5E9"];
+const EXAM_DATE = "2026-09-12";
+const ATTEND_START = "2026-04-01";
+const WEEKDAY_NAMES = ["일","월","화","수","목","금","토"];
 const SORT_OPTIONS = ["반 순서","달성률 높은순","달성률 낮은순","이름순","상담 많은순"];
 
 const DEFAULT_TEACHERS_INIT = {
@@ -65,7 +68,8 @@ const calcAttend = att => { let out=0,absent=0,late=0; WEEKS.forEach(w=>{ const 
 const makeSubData = () => ({hw:{},mid:{plan:"",work:"",rank:""},final:{plan:"",work:"",rank:""},comment:""});
 const makeStudent = (id,name="새 수강생") => ({
   id:String(id),
-  info:{className:"A반",name,birthYear:"",isPreArch:false,isWorking:false,passedSessions:[],goal:"",quickMemo:""},
+  info:{className:"A반",name,birthYear:"",isPreArch:false,isWorking:false,passedSessions:[],goal:"",quickMemo:"",classWeekday:6},
+  classDateOverrides:{},
   attend:{},
   subjects:Object.fromEntries(allSubIds().map(sid=>[sid,makeSubData()])),
   counseling:[],
@@ -515,6 +519,219 @@ function BulkMoveModal({selectedIds,students,allClasses,onMove,onClose}) {
   );
 }
 
+
+// ── 시험 카운트다운 ───────────────────────────────────────
+function CountDown() {
+  const [days,setDays]=useState(0);
+  const [hours,setHours]=useState(0);
+  const [mins,setMins]=useState(0);
+  useEffect(()=>{
+    const calc=()=>{
+      const exam=new Date("2026-09-12T09:00:00");
+      const now=new Date();
+      const diff=Math.max(0,exam-now);
+      setDays(Math.floor(diff/(1000*60*60*24)));
+      setHours(Math.floor((diff%(1000*60*60*24))/(1000*60*60)));
+      setMins(Math.floor((diff%(1000*60*60))/(1000*60)));
+    };
+    calc(); const t=setInterval(calc,30000); return()=>clearInterval(t);
+  },[]);
+  const isPast=new Date()>new Date("2026-09-12");
+  return (
+    <div style={{background:`linear-gradient(135deg,${C.navy},#0D2550)`,borderRadius:16,padding:"20px 24px",marginBottom:20,display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:10,color:"#8ab0d0",letterSpacing:2,fontWeight:700,marginBottom:4}}>2026 건축사 시험까지</div>
+        {isPast?(
+          <div style={{fontSize:20,fontWeight:900,color:C.accent}}>🎉 시험일이 지났습니다!</div>
+        ):(
+          <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+            <span style={{fontSize:52,fontWeight:900,color:C.accent,lineHeight:1}}>{days}</span>
+            <span style={{fontSize:16,color:"#b0c8e8",fontWeight:700}}>일</span>
+            <span style={{fontSize:28,fontWeight:800,color:"#b0c8e8"}}>{String(hours).padStart(2,"0")}:{String(mins).padStart(2,"0")}</span>
+          </div>
+        )}
+      </div>
+      <div style={{flex:1,textAlign:"right"}}>
+        <div style={{fontSize:11,color:"#6880a0"}}>시험일</div>
+        <div style={{fontSize:17,fontWeight:800,color:"#fff"}}>2026년 9월 12일(토)</div>
+        <div style={{fontSize:11,color:"#6880a0",marginTop:2}}>학습 기간 4월 1일 ~ 9월 12일</div>
+      </div>
+    </div>
+  );
+}
+
+// ── 달력 출석 관리 ────────────────────────────────────────
+function AttendCalendar({info,attend,classDateOverrides={},onAttendChange,onOverridesChange,onWeekdayChange,readOnly}) {
+  const [movingDate,setMovingDate]=useState(null);
+
+  const weekday=info.classWeekday??6;
+
+  // 4월~9월 수업일 생성
+  const genClassDates=()=>{
+    const dates=new Set();
+    const d=new Date("2026-04-01");
+    const end=new Date("2026-09-12");
+    while(d<=end){ if(d.getDay()===weekday) dates.add(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); }
+    return dates;
+  };
+  const classDates=genClassDates();
+  const overrideTargets=new Set(Object.values(classDateOverrides||{}));
+  const movedAwayDates=new Set(Object.keys(classDateOverrides||{}));
+  const getOriginal=(date)=>Object.entries(classDateOverrides||{}).find(([,v])=>v===date)?.[0];
+
+  const sColor=s=>s==="출석"?C.success:s==="결석"?C.danger:s==="지각"?C.warn:null;
+  const nextS=s=>s==="출석"?"결석":s==="결석"?"지각":"출석";
+
+  const handleClick=(dateStr)=>{
+    if(readOnly) return;
+    if(movingDate){
+      if(dateStr!==movingDate&&!movedAwayDates.has(dateStr)){
+        const upd={...(classDateOverrides||{}),[movingDate]:dateStr};
+        onOverridesChange(upd);
+      }
+      setMovingDate(null); return;
+    }
+    const isMyClass=(classDates.has(dateStr)&&!movedAwayDates.has(dateStr))||overrideTargets.has(dateStr);
+    if(!isMyClass&&dateStr!==EXAM_DATE) return;
+    if(dateStr===EXAM_DATE) return;
+    const cur=attend?.[dateStr]||"";
+    onAttendChange({...attend,[dateStr]:nextS(cur)});
+  };
+
+  const attVals=Object.values(attend||{});
+  const attended=attVals.filter(s=>s==="출석").length;
+  const absent=attVals.filter(s=>s==="결석").length;
+  const late=attVals.filter(s=>s==="지각").length;
+  const total=attended+absent+late;
+
+  const renderMonth=(year,month)=>{
+    const first=new Date(year,month-1,1);
+    const last=new Date(year,month,0);
+    const offset=first.getDay();
+    const days=[];
+    for(let i=0;i<offset;i++) days.push(null);
+    for(let i=1;i<=last.getDate();i++) days.push(i);
+    const monthLabel=["","1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"][month];
+    const isExamMonth=month===9;
+
+    return (
+      <div key={month} style={{background:C.card,borderRadius:12,padding:16,border:`1px solid ${C.border}`}}>
+        <div style={{fontSize:14,fontWeight:800,color:C.navy,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+          {year}년 {monthLabel}
+          {isExamMonth&&<span style={{fontSize:10,background:C.danger,color:"#fff",borderRadius:5,padding:"1px 6px",fontWeight:700}}>시험월</span>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+          {WEEKDAY_NAMES.map((d,i)=><div key={d} style={{textAlign:"center",fontSize:9,color:i===0?C.danger:i===6?C.blue:C.textLight,fontWeight:600,padding:"3px 0"}}>{d}</div>)}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+          {days.map((day,i)=>{
+            if(!day) return <div key={i}/>;
+            const m2=String(month).padStart(2,"0");
+            const d2=String(day).padStart(2,"0");
+            const ds=`${year}-${m2}-${d2}`;
+            const isExam=ds===EXAM_DATE;
+            const isNormal=classDates.has(ds)&&!movedAwayDates.has(ds);
+            const isMakeup=overrideTargets.has(ds);
+            const isMoved=movedAwayDates.has(ds);
+            const isClickable=(isNormal||isMakeup)&&!isExam;
+            const isMoving=movingDate===ds;
+            const status=attend?.[ds]||"";
+            const sc=sColor(status);
+            const today=new Date().toISOString().slice(0,10);
+            const isToday=ds===today;
+            const dow=new Date(ds).getDay();
+
+            let bg="transparent";
+            let bdr="transparent";
+            let fc=dow===0?C.danger+"99":dow===6?C.blue+"99":C.textMid;
+            let fw=400;
+
+            if(isExam){bg=C.danger;bdr=C.danger;fc="#fff";fw=900;}
+            else if(isMoving){bg=C.accent+"44";bdr=C.accent;fw=700;}
+            else if(isMoved){bg=C.border+"66";bdr=C.border;fc=C.textLight;}
+            else if(isNormal||isMakeup){
+              fw=700;
+              if(sc){bg=sc+"22";bdr=sc;}
+              else{bg=C.blue+"12";bdr=C.blue+"55";}
+              if(isMakeup&&!sc){bg=C.accent+"18";bdr=C.accent+"66";}
+            }
+
+            return (
+              <div key={i} onClick={()=>handleClick(ds)} style={{textAlign:"center",borderRadius:7,padding:"5px 2px",background:bg,border:`1.5px solid ${bdr}`,cursor:isClickable||isMoving?"pointer":"default",position:"relative",outline:isToday?`2px solid ${C.blue}`:"none",outlineOffset:1}}>
+                <div style={{fontSize:11,fontWeight:fw,color:fc,lineHeight:1.2}}>{day}</div>
+                {isExam&&<div style={{fontSize:8,color:"#fff",lineHeight:1,marginTop:1}}>시험</div>}
+                {(isNormal||isMakeup)&&!isMoved&&!isExam&&status&&<div style={{fontSize:8,color:sc,fontWeight:800,lineHeight:1,marginTop:1}}>{status[0]}</div>}
+                {isMakeup&&!status&&<div style={{fontSize:8,color:C.accent,lineHeight:1,marginTop:1}}>보강</div>}
+                {isMoved&&<div style={{fontSize:7,color:C.textLight,lineHeight:1,marginTop:1}}>이동</div>}
+                {(isNormal)&&!readOnly&&!movingDate&&!isExam&&(
+                  <div onClick={e=>{e.stopPropagation();setMovingDate(ds);}} title="날짜 이동"
+                    style={{position:"absolute",top:1,right:1,fontSize:8,color:C.textLight,cursor:"pointer",fontWeight:700,lineHeight:1}}>⇄</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      {/* 요일 설정 */}
+      {!readOnly&&(
+        <div style={{marginBottom:16,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.textMid}}>수업 요일:</div>
+          <div style={{display:"flex",gap:5}}>
+            {WEEKDAY_NAMES.map((d,i)=>(
+              <button key={i} onClick={()=>onWeekdayChange(i)} style={{padding:"5px 10px",borderRadius:8,border:`1.5px solid ${weekday===i?C.blue:C.border}`,background:weekday===i?C.blue:C.card,color:weekday===i?"#fff":C.textMid,fontWeight:weekday===i?800:400,cursor:"pointer",fontSize:12}}>{d}</button>
+            ))}
+          </div>
+          <div style={{fontSize:11,color:C.textLight}}>클릭하면 해당 요일 수업일이 달력에 표시됩니다</div>
+        </div>
+      )}
+
+      {/* 이동 안내 */}
+      {movingDate&&(
+        <div style={{background:C.accent+"22",border:`1.5px solid ${C.accent}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.navy,fontWeight:700,display:"flex",alignItems:"center",gap:10}}>
+          📅 <strong>{movingDate}</strong> 수업 → 이동할 날짜를 클릭하세요
+          <button onClick={()=>setMovingDate(null)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.danger,fontWeight:700,fontSize:13}}>취소</button>
+        </div>
+      )}
+
+      {/* 출석 통계 */}
+      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+        {[["출석",attended,C.success],["결석",absent,C.danger],["지각",late,C.warn]].map(([l,n,col])=>(
+          <div key={l} style={{background:col+"12",borderRadius:8,padding:"6px 14px",border:`1px solid ${col}44`}}>
+            <span style={{fontSize:11,color:col,fontWeight:700}}>{l} {n}회</span>
+          </div>
+        ))}
+        <div style={{background:C.bg,borderRadius:8,padding:"6px 14px",border:`1px solid ${C.border}`}}>
+          <span style={{fontSize:11,color:C.blue,fontWeight:700}}>출석률 {total>0?pct(attended,total):0}%</span>
+        </div>
+        <div style={{background:C.bg,borderRadius:8,padding:"6px 14px",border:`1px solid ${C.border}`}}>
+          <span style={{fontSize:11,color:C.textMid}}>총 {[...classDates].filter(d=>!movedAwayDates.has(d)).length + overrideTargets.size}회 수업</span>
+        </div>
+      </div>
+
+      {/* 달력 그리드 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+        {[4,5,6,7,8,9].map(m=>renderMonth(2026,m))}
+      </div>
+
+      {/* 범례 */}
+      <div style={{display:"flex",gap:12,marginTop:14,fontSize:11,color:C.textMid,flexWrap:"wrap",alignItems:"center"}}>
+        {[["출석",C.success],["결석",C.danger],["지각",C.warn],["미체크(예정)",C.blue],["보강",C.accent]].map(([l,col])=>(
+          <span key={l} style={{display:"flex",alignItems:"center",gap:4}}>
+            <span style={{width:12,height:12,borderRadius:4,background:col+"22",border:`1.5px solid ${col}`,display:"inline-block"}}/>
+            {l}
+          </span>
+        ))}
+        {!readOnly&&<span style={{color:C.textLight}}>⇄ 클릭 → 날짜 이동 · 수업일 클릭 → 출석상태 변경</span>}
+      </div>
+    </div>
+  );
+}
+
 // ── 로그인 화면 ───────────────────────────────────────────
 function LoginScreen({onLogin,storedPw}) {
   const [pw,setPw]=useState(""); const [err,setErr]=useState(false); const [loading,setLoading]=useState(false); const [showPw,setShowPw]=useState(false);
@@ -759,6 +976,8 @@ export default function App() {
   const setComment=(subId,val)=>updSub(subId,sd=>({...sd,comment:val}));
   const updInfo=(info)=>updSt(selectedId,s=>({...s,info}));
   const updCounseling=(records)=>updSt(selectedId,s=>({...s,counseling:records}));
+  const setClassWeekday=(wd)=>updSt(selectedId,s=>({...s,info:{...s.info,classWeekday:wd}}));
+  const setClassDateOverrides=(overrides)=>updSt(selectedId,s=>({...s,classDateOverrides:overrides}));
 
   const addStudent=async()=>{const id=uid();const ns=makeStudent(id);setStudents(prev=>[...prev,ns]);try{await sbUpsert(id,ns);}catch{}setSelectedId(id);setView("detail");setShowInfo(true);setDetailTab("study");};
   const delStudent=async(id)=>{setStudents(prev=>prev.filter(s=>s.id!==id));try{await sbDel(id);}catch{}if(selectedId===id){setSelectedId(null);setView("dashboard");}};
@@ -843,6 +1062,7 @@ export default function App() {
         {/* ═══ 대시보드 ═══ */}
         {view==="dashboard"&&(
           <div>
+            <CountDown/>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
               <div>
                 <div style={{fontSize:22,fontWeight:900,color:C.navy}}>수강생 관리</div>
@@ -969,8 +1189,16 @@ export default function App() {
             {detailTab==="study"&&(
               <div>
                 <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:20}}>
-                  <SecT>📅 출석률 (20주) — 전체 공통</SecT>
-                  <AttendSec attend={student.attend||{}} onChange={isReadOnly?()=>{}:(w,state)=>setAttend(w,state)}/>
+                  <SecT>📅 출석 달력 (2026.4 ~ 9.12)</SecT>
+                  <AttendCalendar
+                    info={student.info}
+                    attend={student.attend||{}}
+                    classDateOverrides={student.classDateOverrides||{}}
+                    onAttendChange={isReadOnly?()=>{}:(att)=>updSt(selectedId,s=>({...s,attend:att}))}
+                    onOverridesChange={isReadOnly?()=>{}:setClassDateOverrides}
+                    onWeekdayChange={isReadOnly?()=>{}:setClassWeekday}
+                    readOnly={isReadOnly}
+                  />
                 </div>
                 {visibleSess.length===0?<div style={{textAlign:"center",padding:"60px 0",color:C.textLight,fontSize:16}}>🎉 모든 교시를 합격하셨습니다!</div>:(
                   <div>
