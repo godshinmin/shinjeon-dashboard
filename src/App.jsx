@@ -793,7 +793,7 @@ export default function App() {
   const hwDone=calcHw(curSubData);
 
   // 경고 대상 (출석률 50% 미만 or 숙제 20% 미만)
-  const warningStudents=useMemo(()=>students.filter(s=>{const a=calcAttend(s.attend||{});const attP=pct(a.out,20);const hwP=sessSummary(s);return attP<50||hwP<20;}),[students]);
+  const warningStudents=useMemo(()=>students.filter(s=>{const a=calcAttend(s.attend||{});const attP=pct(a.out,20);const hwP=sessSummary(s);return hwP<20;}),[students]);
 
   if(!isLoggedIn) return <LoginScreen onLogin={mode=>{setIsLoggedIn(true);setIsReadOnly(mode==="readonly");}} storedPw={storedPw}/>;
   if(view==="report"&&student) return (
@@ -846,17 +846,11 @@ export default function App() {
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
               <div>
                 <div style={{fontSize:22,fontWeight:900,color:C.navy}}>수강생 관리</div>
-                <div style={{fontSize:13,color:C.textMid,marginTop:2}}>총 {students.length}명{warningStudents.length>0&&<span style={{color:C.danger,marginLeft:8}}>⚠️ 주의 {warningStudents.length}명</span>}</div>
+                <div style={{fontSize:13,color:C.textMid,marginTop:2}}>총 {students.length}명</div>
               </div>
             </div>
 
-            {/* 경고 알림 */}
-            {!isReadOnly&&warningStudents.length>0&&(
-              <div style={{background:"#FEF2F2",border:`1px solid ${C.danger}44`,borderRadius:12,padding:"12px 16px",marginBottom:16}}>
-                <div style={{fontSize:12,fontWeight:800,color:C.danger,marginBottom:6}}>⚠️ 관심 필요 수강생 ({warningStudents.length}명) — 출석률 50% 미만 또는 숙제 20% 미만</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{warningStudents.map(s=>{const a=calcAttend(s.attend||{});const attP=pct(a.out,20);const hwP=sessSummary(s);return(<span key={s.id} onClick={()=>{setSelectedId(s.id);setView("detail");setShowInfo(false);setDetailTab("study");}} style={{background:"#fff",border:`1px solid ${C.danger}44`,borderRadius:7,padding:"4px 10px",fontSize:11,cursor:"pointer",color:C.text}}>{s.info.className} <strong>{s.info.name}</strong> <span style={{color:C.danger}}>출석{attP}% 숙제{hwP}%</span></span>);})}</div>
-              </div>
-            )}
+
 
             {/* 액션 버튼 */}
             <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
@@ -905,7 +899,7 @@ export default function App() {
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:14}}>
               {filteredStudents.map(s=>{
                 const overall=sessSummary(s); const teacher=classTeachers[s.info.className];
-                const attP=pct(calcAttend(s.attend||{}).out,20); const isWarning=attP<50||overall<20;
+                const isWarning=overall<20;
                 const isSelected=selectedIds.includes(s.id);
                 return (
                   <div key={s.id} style={{background:C.card,border:`2px solid ${isSelected?C.accent:isWarning?C.danger+"44":C.border}`,borderRadius:14,padding:18,position:"relative",cursor:"pointer",transition:"all .2s",boxShadow:isSelected?`0 0 0 3px ${C.accent}44`:""}}
@@ -919,7 +913,7 @@ export default function App() {
                     {selectMode&&<div style={{position:"absolute",top:12,left:12,width:22,height:22,borderRadius:6,border:`2px solid ${isSelected?C.accent:C.border}`,background:isSelected?C.accent:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"#fff",fontWeight:900}}>{isSelected&&"✓"}</div>}
                     {!isReadOnly&&!selectMode&&<button onClick={e=>{e.stopPropagation();delStudent(s.id);}} style={{position:"absolute",top:10,right:10,background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.textLight}}>×</button>}
                     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,paddingLeft:selectMode?28:0}}>
-                      <div style={{width:40,height:40,borderRadius:11,background:isWarning?C.danger+"18":C.navy,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{isWarning?"⚠️":"👤"}</div>
+                      <div style={{width:40,height:40,borderRadius:11,background:C.navy,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>👤</div>
                       <div style={{flex:1}}>
                         <div style={{fontWeight:800,fontSize:14,color:C.text}}><span style={{background:C.navy,color:C.accent,borderRadius:5,padding:"1px 6px",fontSize:10,fontWeight:700,marginRight:5}}>{s.info.className}</span>{s.info.name}</div>
                         {teacher&&<div style={{fontSize:10,color:C.textLight,marginTop:1}}>👨‍🏫 {teacher}</div>}
@@ -932,7 +926,6 @@ export default function App() {
                       <div style={{fontSize:12,fontWeight:700,color:overall>=80?C.success:overall<20?C.danger:C.blue}}>{overall}%</div>
                       <div style={{display:"flex",gap:4,alignItems:"center"}}>
                         {(s.counseling||[]).length>0&&<span style={{fontSize:10,color:C.accent,fontWeight:700}}>💬{(s.counseling||[]).length}</span>}
-                        <span style={{fontSize:10,color:attP<50?C.danger:C.textLight}}>출석{attP}%</span>
                       </div>
                     </div>
                   </div>
