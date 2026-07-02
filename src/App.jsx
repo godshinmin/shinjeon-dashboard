@@ -1,3 +1,4 @@
+// v3.0 - 반별수업일정 + 출석리스트 + 청강보강
 import { useState, useEffect, useRef, useMemo } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 
