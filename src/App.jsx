@@ -70,6 +70,7 @@ const makeStudent = (id,name="새 수강생") => ({
   id:String(id),
   info:{className:"A반",name,birthYear:"",isPreArch:false,isWorking:false,passedSessions:[],goal:"",quickMemo:"",classSchedule:{weekday:6,time:"09:00",startDate:"2026-04-04",holidays:[]}},
   classDateOverrides:{},
+  makeups:[],
   attend:{},
   subjects:Object.fromEntries(allSubIds().map(sid=>[sid,makeSubData()])),
   counseling:[],
@@ -351,8 +352,8 @@ function StatsView({students,classTeachers}) {
 }
 
 // ── 설정 모달 ─────────────────────────────────────────────
-function SettingsModal({students,setStudents,storedPw,onPwChange,customClasses,setCustomClasses,classTeachers,setClassTeachers,teacherNames,setTeacherNames,onClose}) {
-  const [tab,setTab]=useState("teacher_mgmt");
+function SettingsModal({students,setStudents,storedPw,onPwChange,customClasses,setCustomClasses,classTeachers,setClassTeachers,teacherNames,setTeacherNames,classSchedules,setClassSchedules,allCls=[],onClose}) {
+  const [tab,setTab]=useState("schedule");
   const [pwFields,setPwFields]=useState({cur:"",nw:"",con:""});
   const [pwMsg,setPwMsg]=useState("");
   const [newCls,setNewCls]=useState(""); const [clsMsg,setClsMsg]=useState(""); const [renamingClsIdx,setRenamingClsIdx]=useState(null);
@@ -376,7 +377,7 @@ function SettingsModal({students,setStudents,storedPw,onPwChange,customClasses,s
   const doRenameTeacher=(old,nw)=>{if(!nw.trim()||nw.trim()===old){setEditingTeacher(null);return;}const u=teacherNames.map(t=>t===old?nw.trim():t);setTeacherNames(u);lsSet("sj_teacher_names",u);const t={};Object.entries(classTeachers).forEach(([k,v])=>{t[k]=v===old?nw.trim():v;});setClassTeachers(t);lsSet("sj_class_teachers",t);setEditingTeacher(null);setTeacherMsg("✅ 이름이 변경됐어요!");setTimeout(()=>setTeacherMsg(""),2000);};
   const delTeacher=(name)=>{const u=teacherNames.filter(t=>t!==name);setTeacherNames(u);lsSet("sj_teacher_names",u);const t={};Object.entries(classTeachers).forEach(([k,v])=>{if(v!==name)t[k]=v;});setClassTeachers(t);lsSet("sj_class_teachers",t);};
 
-  const TABS=[["teacher_mgmt","👨‍🏫 건축사 관리"],["class_teacher","🔗 반 배정"],["class","🏛 반 관리"],["pw","🔑 비밀번호"]];
+  const TABS=[["schedule","📅 수업 일정"],["teacher_mgmt","👨‍🏫 건축사 관리"],["class_teacher","🔗 반 배정"],["class","🏛 반 관리"],["pw","🔑 비밀번호"]];
 
   const RenInput=({initVal,onSave,onCancel})=>{const[v,sv]=useState(initVal);return(<><input value={v} onChange={e=>sv(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==="Enter")onSave(v);if(e.key==="Escape")onCancel();}} style={{flex:1,padding:"6px 10px",borderRadius:7,border:`1.5px solid ${C.blue}`,fontSize:13,outline:"none"}}/><button onClick={()=>onSave(v)} style={{background:C.success,color:"#fff",border:"none",borderRadius:7,padding:"6px 12px",fontWeight:700,cursor:"pointer",fontSize:12}}>저장</button><button onClick={onCancel} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:"6px 10px",cursor:"pointer",fontSize:12,color:C.textMid}}>취소</button></>);};
 
@@ -392,6 +393,10 @@ function SettingsModal({students,setStudents,storedPw,onPwChange,customClasses,s
         ))}
       </div>
       <div style={{padding:24}}>
+        {/* 수업 일정 */}
+        {tab==="schedule"&&(
+          <ClassScheduleTab allCls={allCls} classSchedules={classSchedules} setClassSchedules={setClassSchedules} readOnly={false}/>
+        )}
         {/* 건축사 관리 */}
         {tab==="teacher_mgmt"&&(
           <div>
@@ -560,236 +565,51 @@ function CountDown() {
   );
 }
 
-// ── 달력 출석 관리 ────────────────────────────────────────
-function AttendCalendar({info,attend,classDateOverrides={},onAttendChange,onOverridesChange,onScheduleChange,readOnly}) {
-  const [movingDate,setMovingDate]=useState(null);
-  const [movingTarget,setMovingTarget]=useState("");
-  const [showSettings,setShowSettings]=useState(false);
-  const [newHoliday,setNewHoliday]=useState("");
 
-  const cs = info.classSchedule || {weekday:6,time:"09:00",startDate:"2026-04-04",holidays:[]};
-  const weekday = cs.weekday ?? 6;
-  const startDate = cs.startDate || "2026-04-04";
-  const holidays = new Set(cs.holidays || []);
-  const updSchedule = (key,val) => {
-    const updated = {...cs, [key]: val};
-    onScheduleChange(updated);
-  };
-
-  // 수업일 생성
-  const genClassDates = () => {
-    const dates = new Set();
-    const start = new Date(startDate);
-    const end = new Date(EXAM_DATE);
-    if(start > end) return dates;
-    const d = new Date(start);
-    while(d <= end) {
-      if(d.getDay() === weekday) {
-        const ds = d.toISOString().slice(0,10);
-        if(!holidays.has(ds)) dates.add(ds);
-      }
-      d.setDate(d.getDate()+1);
+// ── 반별 수업 일정 유틸 ───────────────────────────────────
+const DEFAULT_CLASS_SCHEDULES = {};
+// 수업 일자 생성: 반 일정 기준
+function genClassDates(schedule) {
+  if(!schedule || !schedule.startDate) return [];
+  const dates = [];
+  const start = new Date(schedule.startDate);
+  const end = new Date(EXAM_DATE);
+  const wd = schedule.weekday ?? 6;
+  const holidays = new Set(schedule.holidays || []);
+  const d = new Date(start);
+  while(d <= end) {
+    if(d.getDay() === wd) {
+      const ds = d.toISOString().slice(0,10);
+      if(!holidays.has(ds)) dates.push(ds);
     }
-    return dates;
-  };
-  const classDates = genClassDates();
-  const overrideTargets = new Set(Object.values(classDateOverrides||{}));
-  const movedAwayDates = new Set(Object.keys(classDateOverrides||{}));
-  const getOriginal = (date) => Object.entries(classDateOverrides||{}).find(([,v])=>v===date)?.[0];
+    d.setDate(d.getDate()+1);
+  }
+  return dates;
+}
+function dayLabel(ds) {
+  const days=["일","월","화","수","목","금","토"];
+  return days[new Date(ds).getDay()];
+}
 
-  // 출석 4단계 순환: "" → 출석 → 결석 → 지각 → ""
+// ── 주차별 출석 리스트 ───────────────────────────────────
+function AttendList({classDates=[], attend={}, onAttendChange, readOnly}) {
+  const sColor = s => s==="출석"?C.success:s==="결석"?C.danger:s==="지각"?C.warn:C.border;
   const nextS = s => s==="출석"?"결석":s==="결석"?"지각":s==="지각"?"":"출석";
-  const sColor = s => s==="출석"?C.success:s==="결석"?C.danger:s==="지각"?C.warn:null;
-  const sLabel = s => s==="출석"?"출":s==="결석"?"결":s==="지각"?"지":"";
-
-  const handleClick = (ds) => {
+  const toggle = (ds) => {
     if(readOnly) return;
-    if(movingDate) {
-      if(ds !== movingDate && !movedAwayDates.has(ds) && !holidays.has(ds) && ds !== EXAM_DATE) {
-        onOverridesChange({...(classDateOverrides||{}), [movingDate]: ds});
-      }
-      setMovingDate(null); return;
-    }
-    const isActive = (classDates.has(ds)&&!movedAwayDates.has(ds)) || overrideTargets.has(ds);
-    if(!isActive) return;
-    const cur = attend?.[ds]||"";
+    const cur = attend[ds]||"";
     const next = nextS(cur);
-    if(next==="") {
-      const upd = {...attend}; delete upd[ds]; onAttendChange(upd);
-    } else {
-      onAttendChange({...attend, [ds]: next});
-    }
+    if(next==="") { const u={...attend}; delete u[ds]; onAttendChange(u); }
+    else onAttendChange({...attend,[ds]:next});
   };
-
-  const removeMove = (original) => {
-    const upd = {...(classDateOverrides||{})}; delete upd[original];
-    onOverridesChange(upd);
-  };
-
-  const addHoliday = () => {
-    const d = newHoliday.trim(); if(!d) return;
-    updSchedule("holidays", [...(cs.holidays||[]), d]);
-    setNewHoliday("");
-  };
-  const removeHoliday = (d) => updSchedule("holidays", (cs.holidays||[]).filter(h=>h!==d));
-
-  // 통계
-  const attVals = Object.entries(attend||{}).filter(([d])=>(classDates.has(d)&&!movedAwayDates.has(d))||overrideTargets.has(d));
-  const attended = attVals.filter(([,s])=>s==="출석").length;
-  const absent = attVals.filter(([,s])=>s==="결석").length;
-  const late = attVals.filter(([,s])=>s==="지각").length;
-  const total = attended+absent+late;
-  const totalClass = [...classDates].filter(d=>!movedAwayDates.has(d)).length + overrideTargets.size;
-
-  const renderMonth = (year, month) => {
-    const first = new Date(year,month-1,1);
-    const last = new Date(year,month,0);
-    const offset = first.getDay();
-    const days = [];
-    for(let i=0;i<offset;i++) days.push(null);
-    for(let i=1;i<=last.getDate();i++) days.push(i);
-    const mLabel = ["","1월","2월","3월","4월","5월","6월","7월","8월","9월"][month];
-
-    return (
-      <div key={month} style={{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.border}`}}>
-        <div style={{fontSize:13,fontWeight:800,color:C.navy,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
-          {mLabel}
-          {month===9&&<span style={{fontSize:9,background:C.danger,color:"#fff",borderRadius:4,padding:"1px 5px",fontWeight:700}}>시험월</span>}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1.5,marginBottom:3}}>
-          {WEEKDAY_NAMES.map((d,i)=><div key={d} style={{textAlign:"center",fontSize:9,color:i===0?C.danger:i===6?C.blue:C.textLight,fontWeight:600,paddingBottom:3}}>{d}</div>)}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1.5}}>
-          {days.map((day,i)=>{
-            if(!day) return <div key={i}/>;
-            const ds = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-            const isExam = ds===EXAM_DATE;
-            const isHoliday = holidays.has(ds);
-            const isNormal = classDates.has(ds)&&!movedAwayDates.has(ds);
-            const isMakeup = overrideTargets.has(ds);
-            const isMoved = movedAwayDates.has(ds);
-            const status = attend?.[ds]||"";
-            const sc = sColor(status);
-            const dow = new Date(ds).getDay();
-            const today = new Date().toISOString().slice(0,10);
-            const isToday = ds===today;
-            const isMovingThis = movingDate===ds;
-
-            let bg="transparent", bdr="transparent", fc=dow===0?C.danger+"99":dow===6?C.blue+"99":C.textMid, fw=400;
-
-            if(isExam){bg=C.danger;bdr=C.danger;fc="#fff";fw=900;}
-            else if(isHoliday){bg="#f5f5f5";bdr=C.border;fc=C.textLight;fw=400;}
-            else if(isMovingThis){bg=C.accent+"44";bdr=C.accent;fw=800;}
-            else if(isMoved){bg=C.border+"55";bdr=C.border;fc=C.textLight+"99";}
-            else if(isNormal||isMakeup){
-              fw=700;
-              if(sc){bg=sc+"28";bdr=sc;}
-              else{bg=isMakeup?C.accent+"18":C.blue+"14";bdr=isMakeup?C.accent+"66":C.blue+"55";}
-            }
-
-            return (
-              <div key={i} onClick={()=>handleClick(ds)} style={{textAlign:"center",borderRadius:6,padding:"5px 1px",background:bg,border:`1.5px solid ${bdr}`,cursor:(isNormal||isMakeup)&&!isExam?"pointer":"default",position:"relative",outline:isToday?`2px solid ${C.blue}`:"none",outlineOffset:1,minHeight:36,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1}}>
-                <div style={{fontSize:11,fontWeight:fw,color:fc,lineHeight:1}}>{day}</div>
-                {isExam&&<div style={{fontSize:7,color:"#fff",lineHeight:1}}>시험</div>}
-                {isHoliday&&<div style={{fontSize:7,color:C.textLight,lineHeight:1}}>휴강</div>}
-                {isMoved&&<div style={{fontSize:7,color:C.textLight,lineHeight:1}}>이동</div>}
-                {isMakeup&&!status&&<div style={{fontSize:7,color:C.accent,fontWeight:700,lineHeight:1}}>보강</div>}
-                {status&&(isNormal||isMakeup)&&<div style={{fontSize:8,color:sc,fontWeight:800,lineHeight:1}}>{sLabel(status)}</div>}
-                {isNormal&&!readOnly&&!movingDate&&!isExam&&(
-                  <div onClick={e=>{e.stopPropagation();setMovingDate(ds);}} title="날짜 이동"
-                    style={{position:"absolute",top:1,right:1,fontSize:8,color:C.textLight,cursor:"pointer",fontWeight:700}}>⇄</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
+  const attended=Object.values(attend).filter(s=>s==="출석").length;
+  const absent=Object.values(attend).filter(s=>s==="결석").length;
+  const late=Object.values(attend).filter(s=>s==="지각").length;
+  const total=attended+absent+late;
 
   return (
     <div>
-      {/* 수업 설정 패널 */}
-      <div style={{marginBottom:16}}>
-        <button onClick={()=>setShowSettings(p=>!p)} style={{background:showSettings?C.navy:C.bg,border:`1.5px solid ${showSettings?C.navy:C.border}`,borderRadius:10,padding:"9px 18px",fontWeight:700,cursor:"pointer",fontSize:13,color:showSettings?"#fff":C.textMid,marginBottom:showSettings?12:0}}>
-          {showSettings?"▲ 수업 설정 닫기":"⚙️ 수업 설정 (요일/시간/첫수업/휴강)"}
-        </button>
-
-        {showSettings&&(
-          <div style={{background:C.bg,borderRadius:12,padding:20,border:`1.5px solid ${C.border}`}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:16,marginBottom:16}}>
-              {/* 수업 요일 */}
-              <div>
-                <div style={{fontSize:12,fontWeight:700,color:C.textMid,marginBottom:8}}>📆 수업 요일</div>
-                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                  {WEEKDAY_NAMES.map((d,i)=>(
-                    <button key={i} onClick={()=>!readOnly&&updSchedule("weekday",i)} style={{padding:"5px 9px",borderRadius:7,border:`1.5px solid ${weekday===i?C.blue:C.border}`,background:weekday===i?C.blue:C.card,color:weekday===i?"#fff":C.textMid,fontWeight:weekday===i?800:400,cursor:"pointer",fontSize:12}}>{d}</button>
-                  ))}
-                </div>
-              </div>
-              {/* 수업 시간 */}
-              <div>
-                <div style={{fontSize:12,fontWeight:700,color:C.textMid,marginBottom:8}}>⏰ 수업 시간</div>
-                <input type="time" value={cs.time||"09:00"} onChange={e=>!readOnly&&updSchedule("time",e.target.value)} disabled={readOnly}
-                  style={{padding:"8px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:14,outline:"none",fontWeight:700,color:C.navy,cursor:"pointer"}}/>
-              </div>
-              {/* 첫 수업 날짜 */}
-              <div>
-                <div style={{fontSize:12,fontWeight:700,color:C.textMid,marginBottom:8}}>🗓 첫 수업 날짜</div>
-                <input type="date" value={cs.startDate||"2026-04-04"} min="2026-04-01" max="2026-09-12" onChange={e=>!readOnly&&updSchedule("startDate",e.target.value)} disabled={readOnly}
-                  style={{padding:"8px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",color:C.navy}}/>
-              </div>
-            </div>
-
-            {/* 휴강일 관리 */}
-            <div style={{borderTop:`1px solid ${C.border}`,paddingTop:14}}>
-              <div style={{fontSize:12,fontWeight:700,color:C.textMid,marginBottom:8}}>🚫 휴강일 설정</div>
-              {!readOnly&&(
-                <div style={{display:"flex",gap:8,marginBottom:10}}>
-                  <input type="date" value={newHoliday} min="2026-04-01" max="2026-09-12" onChange={e=>setNewHoliday(e.target.value)}
-                    style={{padding:"8px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",color:C.navy}}/>
-                  <button onClick={addHoliday} style={{background:C.danger,color:"#fff",border:"none",borderRadius:9,padding:"8px 16px",fontWeight:700,cursor:"pointer",fontSize:13}}>휴강 추가</button>
-                </div>
-              )}
-              {(cs.holidays||[]).length===0&&<div style={{fontSize:12,color:C.textLight}}>휴강일이 없어요</div>}
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {[...(cs.holidays||[])].sort().map(d=>(
-                  <span key={d} style={{background:"#FEF2F2",border:`1px solid ${C.danger}44`,borderRadius:7,padding:"5px 10px",fontSize:11,color:C.danger,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-                    🚫 {d}
-                    {!readOnly&&<button onClick={()=>removeHoliday(d)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:13,fontWeight:900,lineHeight:1}}>×</button>}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* 날짜 이동 내역 */}
-            {Object.keys(classDateOverrides||{}).length>0&&(
-              <div style={{borderTop:`1px solid ${C.border}`,paddingTop:14,marginTop:14}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.textMid,marginBottom:8}}>📅 날짜 이동 내역</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                  {Object.entries(classDateOverrides||{}).map(([from,to])=>(
-                    <span key={from} style={{background:"#EBF0FB",border:`1px solid ${C.blue}44`,borderRadius:7,padding:"5px 10px",fontSize:11,color:C.blue,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-                      {from} → {to}
-                      {!readOnly&&<button onClick={()=>removeMove(from)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:13,fontWeight:900,lineHeight:1}}>×</button>}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 이동 안내 */}
-      {movingDate&&(
-        <div style={{background:C.accent+"22",border:`1.5px solid ${C.accent}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.navy,fontWeight:700,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          📅 <strong>{movingDate}</strong> ({cs.time}) 수업을 이동할 날짜를 달력에서 클릭하세요
-          <button onClick={()=>setMovingDate(null)} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:C.danger,fontWeight:700,fontSize:13}}>취소</button>
-        </div>
-      )}
-
-      {/* 출석 통계 */}
-      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
         {[["출석",attended,C.success],["결석",absent,C.danger],["지각",late,C.warn]].map(([l,n,col])=>(
           <div key={l} style={{background:col+"12",borderRadius:8,padding:"6px 14px",border:`1px solid ${col}44`}}>
             <span style={{fontSize:11,color:col,fontWeight:700}}>{l} {n}회</span>
@@ -798,26 +618,235 @@ function AttendCalendar({info,attend,classDateOverrides={},onAttendChange,onOver
         <div style={{background:C.bg,borderRadius:8,padding:"6px 14px",border:`1px solid ${C.border}`}}>
           <span style={{fontSize:11,color:C.blue,fontWeight:700}}>출석률 {total>0?pct(attended,total):0}%</span>
         </div>
-        <div style={{background:C.bg,borderRadius:8,padding:"6px 14px",border:`1px solid ${C.border}`}}>
-          <span style={{fontSize:11,color:C.textMid}}>총 {totalClass}회 · {WEEKDAY_NAMES[weekday]}요일 {cs.time||""}</span>
+      </div>
+      {classDates.length===0&&(
+        <div style={{textAlign:"center",padding:"30px 0",color:C.textLight,fontSize:13}}>수업 일정이 없어요. 반 설정에서 수업 요일/날짜를 설정해주세요.</div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:420,overflowY:"auto",paddingRight:4}}>
+        {classDates.map((ds,idx)=>{
+          const status=attend[ds]||"";
+          const sc=sColor(status);
+          const isPast=new Date(ds)<new Date();
+          const isExam=ds===EXAM_DATE;
+          return (
+            <div key={ds} style={{display:"flex",alignItems:"center",gap:10,background:isExam?C.danger+"18":C.card,borderRadius:9,padding:"9px 14px",border:`1.5px solid ${isExam?C.danger:status?sc+"66":C.border}`,opacity:isExam?1:1}}>
+              <div style={{width:36,textAlign:"center",flexShrink:0}}>
+                <div style={{fontSize:10,color:C.textLight,lineHeight:1}}>
+                  {isExam?"시험":`${idx+1}주차`}
+                </div>
+              </div>
+              <div style={{flex:1}}>
+                <span style={{fontSize:14,fontWeight:700,color:isExam?C.danger:C.navy}}>{ds}</span>
+                <span style={{fontSize:12,color:C.textLight,marginLeft:8}}>({dayLabel(ds)})</span>
+                {isExam&&<span style={{fontSize:11,color:C.danger,fontWeight:800,marginLeft:8}}>🏛 건축사 시험일</span>}
+              </div>
+              {!isExam&&(
+                <button onClick={()=>toggle(ds)} style={{
+                  padding:"6px 16px",borderRadius:8,border:`1.5px solid ${status?sc:C.border}`,
+                  background:status?sc+"18":C.bg,color:status?sc:C.textLight,
+                  fontWeight:700,cursor:readOnly?"default":"pointer",fontSize:12,minWidth:60,
+                }}>
+                  {status||"미체크"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {!readOnly&&classDates.length>0&&<div style={{fontSize:11,color:C.textLight,marginTop:8,textAlign:"right"}}>클릭 → 출석 → 결석 → 지각 → 초기화 순환</div>}
+    </div>
+  );
+}
+
+// ── 청강/보강 기록 ────────────────────────────────────────
+function MakeupSection({makeups=[], onChange, allClasses=[], classDates=[], readOnly}) {
+  const [editing,setEditing]=useState(null);
+  const [form,setForm]=useState({});
+  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const newRec=()=>{setForm({id:uid(),missedDate:"",type:"결석보강",makeupDate:"",makeupClass:"",note:""});setEditing("new");};
+  const saveRec=()=>{
+    if(editing==="new") onChange([...makeups,form]);
+    else onChange(makeups.map(r=>r.id===editing?form:r));
+    setEditing(null);setForm({});
+  };
+
+  const typeLabel = t => t==="청강"?"🎧 청강":t==="결석보강"?"📚 결석 보강":t==="지각보강"?"⏰ 지각 보강":"📝 기타";
+  const typeColor = t => t==="청강"?C.blue:t==="결석보강"?C.danger:t==="지각보강"?C.warn:C.textMid;
+
+  return (
+    <div>
+      {!readOnly&&<button onClick={newRec} style={{background:C.blue,color:"#fff",border:"none",borderRadius:9,padding:"9px 18px",fontWeight:700,cursor:"pointer",fontSize:13,marginBottom:14}}>+ 청강/보강 기록 추가</button>}
+      {makeups.length===0&&<div style={{textAlign:"center",padding:"24px 0",color:C.textLight,fontSize:13}}>청강/보강 기록이 없어요</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {[...makeups].sort((a,b)=>a.missedDate.localeCompare(b.missedDate)).map(r=>(
+          <div key={r.id} style={{background:C.bg,borderRadius:12,padding:"12px 16px",border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+              <span style={{background:typeColor(r.type)+"18",color:typeColor(r.type),borderRadius:7,padding:"3px 10px",fontSize:12,fontWeight:800}}>{typeLabel(r.type)}</span>
+              {!readOnly&&<div style={{marginLeft:"auto",display:"flex",gap:6}}>
+                <button onClick={()=>{setForm({...r});setEditing(r.id);}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:7,padding:"3px 10px",cursor:"pointer",fontSize:11,color:C.textMid}}>✏️</button>
+                <button onClick={()=>onChange(makeups.filter(x=>x.id!==r.id))} style={{background:"none",border:`1px solid ${C.danger}44`,borderRadius:7,padding:"3px 10px",cursor:"pointer",fontSize:11,color:C.danger}}>삭제</button>
+              </div>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
+              {r.missedDate&&<div style={{background:"#FEF2F2",borderRadius:8,padding:"7px 12px"}}>
+                <div style={{fontSize:9,color:C.danger,fontWeight:700,marginBottom:2}}>원래 수업일</div>
+                <div style={{fontSize:12,color:C.text,fontWeight:600}}>{r.missedDate} ({dayLabel(r.missedDate)})</div>
+              </div>}
+              {r.makeupDate&&<div style={{background:"#ECFDF5",borderRadius:8,padding:"7px 12px"}}>
+                <div style={{fontSize:9,color:C.success,fontWeight:700,marginBottom:2}}>{r.type==="청강"?"청강일":"보강일"}</div>
+                <div style={{fontSize:12,color:C.text,fontWeight:600}}>{r.makeupDate} ({dayLabel(r.makeupDate)})</div>
+              </div>}
+              {r.makeupClass&&<div style={{background:"#EBF0FB",borderRadius:8,padding:"7px 12px"}}>
+                <div style={{fontSize:9,color:C.blue,fontWeight:700,marginBottom:2}}>{r.type==="청강"?"청강 반":"보강 반"}</div>
+                <div style={{fontSize:12,color:C.text,fontWeight:600}}>{r.makeupClass}</div>
+              </div>}
+            </div>
+            {r.note&&<div style={{marginTop:8,fontSize:12,color:C.textMid,background:"#fff",borderRadius:7,padding:"6px 10px",border:`1px solid ${C.border}`}}>{r.note}</div>}
+          </div>
+        ))}
+      </div>
+
+      {editing&&(
+        <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:C.card,borderRadius:20,width:"100%",maxWidth:460,maxHeight:"88vh",overflow:"auto",boxShadow:"0 24px 80px #0008"}}>
+            <div style={{background:C.navy,borderRadius:"20px 20px 0 0",padding:"16px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{fontSize:15,fontWeight:900,color:"#fff"}}>{editing==="new"?"청강/보강 기록 추가":"기록 수정"}</div>
+              <button onClick={()=>{setEditing(null);setForm({});}} style={{background:"#ffffff22",border:"none",borderRadius:7,color:"#fff",padding:"4px 12px",cursor:"pointer",fontWeight:700}}>닫기</button>
+            </div>
+            <div style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
+              <div>
+                <label style={{fontSize:12,fontWeight:700,color:C.textMid,display:"block",marginBottom:8}}>유형</label>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {[["청강","🎧 다른 반 청강"],["결석보강","📚 결석 → 보강"],["지각보강","⏰ 지각 → 보강"],["기타","📝 기타"]].map(([v,l])=>(
+                    <button key={v} onClick={()=>upd("type",v)} style={{padding:"8px 14px",borderRadius:9,border:`1.5px solid ${form.type===v?typeColor(v):C.border}`,background:form.type===v?typeColor(v)+"18":C.card,color:form.type===v?typeColor(v):C.textMid,fontWeight:form.type===v?700:400,cursor:"pointer",fontSize:12}}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <label style={{fontSize:12,fontWeight:700,color:C.danger,display:"block",marginBottom:5}}>원래 수업일 (결석/지각한 날)</label>
+                  <select value={form.missedDate||""} onChange={e=>upd("missedDate",e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none"}}>
+                    <option value="">날짜 선택</option>
+                    {classDates.map(d=><option key={d} value={d}>{d} ({dayLabel(d)})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{fontSize:12,fontWeight:700,color:C.success,display:"block",marginBottom:5}}>{form.type==="청강"?"청강일":"보강일"}</label>
+                  <input type="date" value={form.makeupDate||""} onChange={e=>upd("makeupDate",e.target.value)} min="2026-04-01" max="2026-09-12"
+                    style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              </div>
+              {(form.type==="청강"||form.type==="결석보강"||form.type==="지각보강")&&(
+                <div>
+                  <label style={{fontSize:12,fontWeight:700,color:C.blue,display:"block",marginBottom:5}}>{form.type==="청강"?"청강한 반":"보강한 반 (선택)"}</label>
+                  <select value={form.makeupClass||""} onChange={e=>upd("makeupClass",e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none"}}>
+                    <option value="">반 선택 (선택사항)</option>
+                    {allClasses.map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label style={{fontSize:12,fontWeight:700,color:C.textMid,display:"block",marginBottom:5}}>📝 메모</label>
+                <textarea value={form.note||""} onChange={e=>upd("note",e.target.value)} placeholder="특이사항, 이유 등..." rows={3}
+                  style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={saveRec} style={{flex:1,background:C.navy,color:"#fff",border:"none",borderRadius:11,padding:13,fontWeight:800,cursor:"pointer",fontSize:14}}>저장</button>
+                <button onClick={()=>{setEditing(null);setForm({});}} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:11,padding:"13px 18px",cursor:"pointer",color:C.textMid,fontSize:13}}>취소</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 반 일정 설정 탭 (SettingsModal 내부에서 사용) ─────────
+function ClassScheduleTab({allCls, classSchedules, setClassSchedules, readOnly}) {
+  const [selCls, setSelCls] = useState(allCls[0]||"");
+  const [newHoliday, setNewHoliday] = useState("");
+  const sched = classSchedules[selCls] || {weekday:6,time:"09:00",startDate:"2026-04-04",holidays:[]};
+  const updSched = (key,val) => {
+    const u = {...classSchedules, [selCls]: {...sched, [key]: val}};
+    setClassSchedules(u); lsSet("sj_class_schedules", u);
+  };
+  const addHoliday = () => {
+    const d=newHoliday.trim(); if(!d) return;
+    updSched("holidays", [...(sched.holidays||[]), d]);
+    setNewHoliday("");
+  };
+  const removeHoliday = (d) => updSched("holidays", (sched.holidays||[]).filter(h=>h!==d));
+  const dates = genClassDates(sched);
+
+  return (
+    <div>
+      {/* 반 선택 */}
+      <div style={{marginBottom:16}}>
+        <label style={{fontSize:12,fontWeight:700,color:C.textMid,display:"block",marginBottom:8}}>반 선택</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {allCls.map(c=>(
+            <button key={c} onClick={()=>setSelCls(c)} style={{padding:"6px 12px",borderRadius:8,border:`1.5px solid ${selCls===c?C.blue:C.border}`,background:selCls===c?C.blue:C.card,color:selCls===c?"#fff":C.textMid,fontWeight:selCls===c?700:400,cursor:"pointer",fontSize:12}}>{c}</button>
+          ))}
         </div>
       </div>
 
-      {/* 달력 */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(255px,1fr))",gap:10}}>
-        {[4,5,6,7,8,9].map(m=>renderMonth(2026,m))}
-      </div>
-
-      {/* 범례 */}
-      <div style={{display:"flex",gap:10,marginTop:12,fontSize:11,color:C.textMid,flexWrap:"wrap",alignItems:"center"}}>
-        {[["출석(출)",C.success],["결석(결)",C.danger],["지각(지)",C.warn],["예정",C.blue],["보강",C.accent],["휴강","#999"]].map(([l,col])=>(
-          <span key={l} style={{display:"flex",alignItems:"center",gap:3}}>
-            <span style={{width:12,height:12,borderRadius:3,background:col+"22",border:`1.5px solid ${col}`,display:"inline-block"}}/>
-            {l}
-          </span>
-        ))}
-        {!readOnly&&<span style={{color:C.textLight,marginLeft:4}}>수업일 클릭→출석/결석/지각/초기화 순환 · ⇄→날짜 이동</span>}
-      </div>
+      {selCls&&(
+        <div style={{background:C.bg,borderRadius:12,padding:16,border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.navy,marginBottom:12}}>📅 {selCls} 수업 일정</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14,marginBottom:14}}>
+            {/* 수업 요일 */}
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:C.textMid,display:"block",marginBottom:6}}>수업 요일</label>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                {WEEKDAY_NAMES.map((d,i)=>(
+                  <button key={i} onClick={()=>!readOnly&&updSched("weekday",i)} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${sched.weekday===i?C.blue:C.border}`,background:sched.weekday===i?C.blue:C.card,color:sched.weekday===i?"#fff":C.textMid,fontWeight:sched.weekday===i?700:400,cursor:"pointer",fontSize:11}}>{d}</button>
+                ))}
+              </div>
+            </div>
+            {/* 수업 시간 */}
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:C.textMid,display:"block",marginBottom:6}}>수업 시간</label>
+              <input type="time" value={sched.time||"09:00"} onChange={e=>!readOnly&&updSched("time",e.target.value)} disabled={readOnly}
+                style={{padding:"8px 12px",borderRadius:8,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",fontWeight:700,color:C.navy}}/>
+            </div>
+            {/* 첫 수업 */}
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:C.textMid,display:"block",marginBottom:6}}>첫 수업 날짜</label>
+              <input type="date" value={sched.startDate||"2026-04-04"} min="2026-04-01" max="2026-09-12" onChange={e=>!readOnly&&updSched("startDate",e.target.value)} disabled={readOnly}
+                style={{padding:"8px 12px",borderRadius:8,border:`1.5px solid ${C.border}`,fontSize:12,outline:"none",color:C.navy}}/>
+            </div>
+          </div>
+          {/* 수업일 미리보기 */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.textMid,marginBottom:6}}>생성된 수업일 ({dates.length}회)</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",maxHeight:80,overflowY:"auto"}}>
+              {dates.map((d,i)=><span key={d} style={{fontSize:10,background:C.card,border:`1px solid ${C.border}`,borderRadius:5,padding:"2px 7px",color:C.textMid}}>{i+1}. {d}</span>)}
+            </div>
+          </div>
+          {/* 휴강일 */}
+          <div style={{borderTop:`1px solid ${C.border}`,paddingTop:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.textMid,marginBottom:8}}>🚫 휴강일</div>
+            {!readOnly&&(
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                <input type="date" value={newHoliday} min="2026-04-01" max="2026-09-12" onChange={e=>setNewHoliday(e.target.value)}
+                  style={{padding:"7px 12px",borderRadius:8,border:`1.5px solid ${C.border}`,fontSize:12,outline:"none",color:C.navy}}/>
+                <button onClick={addHoliday} style={{background:C.danger,color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,cursor:"pointer",fontSize:12}}>추가</button>
+              </div>
+            )}
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {(sched.holidays||[]).length===0&&<span style={{fontSize:12,color:C.textLight}}>휴강일 없음</span>}
+              {[...(sched.holidays||[])].sort().map(d=>(
+                <span key={d} style={{background:"#FEF2F2",border:`1px solid ${C.danger}44`,borderRadius:6,padding:"4px 10px",fontSize:11,color:C.danger,fontWeight:700,display:"flex",alignItems:"center",gap:5}}>
+                  🚫 {d} ({dayLabel(d)})
+                  {!readOnly&&<button onClick={()=>removeHoliday(d)} style={{background:"none",border:"none",cursor:"pointer",color:C.danger,fontSize:12,fontWeight:900,lineHeight:1}}>×</button>}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1039,6 +1068,7 @@ export default function App() {
   const [sortMode,setSortMode]=useState(SORT_OPTIONS[0]);
   const [customClasses,setCustomClasses]=useState([]);
   const [classTeachers,setClassTeachers]=useState(DEFAULT_TEACHERS_INIT);
+  const [classSchedules,setClassSchedules]=useState(DEFAULT_CLASS_SCHEDULES);
   const [teacherNames,setTeacherNames]=useState(DEFAULT_TEACHER_NAMES);
   const [storedPw,setStoredPw]=useState(DEFAULT_PW);
   // 다중선택
@@ -1051,6 +1081,7 @@ export default function App() {
     setCustomClasses(lsGet("sj_custom_classes",[]));
     const t=lsGet("sj_class_teachers",null); if(t)setClassTeachers({...DEFAULT_TEACHERS_INIT,...t});
     const tn=lsGet("sj_teacher_names",null); if(tn)setTeacherNames(tn);
+    const cs=lsGet("sj_class_schedules",null); if(cs)setClassSchedules(cs);
     const p=lsGet("sj_teacher_pw",null); if(p)setStoredPw(p);
     (async()=>{const v=await sbGetSetting("teacher_password");if(v){setStoredPw(v);lsSet("sj_teacher_pw",v);}})();
   },[]);
@@ -1066,6 +1097,14 @@ export default function App() {
   const setComment=(subId,val)=>updSub(subId,sd=>({...sd,comment:val}));
   const updInfo=(info)=>updSt(selectedId,s=>({...s,info}));
   const updCounseling=(records)=>updSt(selectedId,s=>({...s,counseling:records}));
+  const updMakeups=(records)=>updSt(selectedId,s=>({...s,makeups:records}));
+  // 수강생의 수업 일정: 개인과외면 개인 설정, 아니면 반 공통 설정
+  const getStudentSchedule=(s)=>{
+    if(!s) return null;
+    const cls=s.info.className;
+    if(cls==="개인과외") return s.info.classSchedule||{weekday:6,time:"09:00",startDate:"2026-04-04",holidays:[]};
+    return classSchedules[cls]||null;
+  };
   const setClassSchedule=(sched)=>updSt(selectedId,s=>({...s,info:{...s.info,classSchedule:sched}}));
   const setClassDateOverrides=(overrides)=>updSt(selectedId,s=>({...s,classDateOverrides:overrides}));
 
@@ -1121,7 +1160,7 @@ export default function App() {
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'Noto Sans KR',sans-serif"}}>
-      {showSettings&&!isReadOnly&&<SettingsModal students={students} setStudents={setStudents} storedPw={storedPw} onPwChange={pw=>{setStoredPw(pw);lsSet("sj_teacher_pw",pw);}} customClasses={customClasses} setCustomClasses={setCustomClasses} classTeachers={classTeachers} setClassTeachers={t=>{setClassTeachers(t);lsSet("sj_class_teachers",t);}} teacherNames={teacherNames} setTeacherNames={t=>{setTeacherNames(t);lsSet("sj_teacher_names",t);}} onClose={()=>setShowSettings(false)}/>}
+      {showSettings&&!isReadOnly&&<SettingsModal students={students} setStudents={setStudents} storedPw={storedPw} onPwChange={pw=>{setStoredPw(pw);lsSet("sj_teacher_pw",pw);}} customClasses={customClasses} setCustomClasses={setCustomClasses} classTeachers={classTeachers} setClassTeachers={t=>{setClassTeachers(t);lsSet("sj_class_teachers",t);}} teacherNames={teacherNames} setTeacherNames={t=>{setTeacherNames(t);lsSet("sj_teacher_names",t);}} classSchedules={classSchedules} setClassSchedules={t=>{setClassSchedules(t);lsSet("sj_class_schedules",t);}} allCls={allClasses} onClose={()=>setShowSettings(false)}/>}
       {shareModal&&<ShareModal studentId={shareModal.id} studentName={shareModal.name} onClose={()=>setShareModal(null)}/>}
       {showBulkMove&&<BulkMoveModal selectedIds={selectedIds} students={students} allClasses={allClasses} onMove={bulkMove} onClose={()=>setShowBulkMove(false)}/>}
 
@@ -1278,18 +1317,55 @@ export default function App() {
 
             {detailTab==="study"&&(
               <div>
-                <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:20}}>
-                  <SecT>📅 출석 달력 (2026.4 ~ 9.12)</SecT>
-                  <AttendCalendar
-                    info={student.info}
-                    attend={student.attend||{}}
-                    classDateOverrides={student.classDateOverrides||{}}
-                    onAttendChange={isReadOnly?()=>{}:(att)=>updSt(selectedId,s=>({...s,attend:att}))}
-                    onOverridesChange={isReadOnly?()=>{}:setClassDateOverrides}
-                    onScheduleChange={isReadOnly?()=>{}:setClassSchedule}
-                    readOnly={isReadOnly}
-                  />
-                </div>
+                {(()=>{
+                  const sched = getStudentSchedule(student);
+                  const dates = sched ? genClassDates(sched) : [];
+                  const isIndividual = student.info.className==="개인과외";
+                  return (
+                    <div>
+                      {/* 개인과외: 개인 일정 설정 */}
+                      {isIndividual&&!isReadOnly&&(
+                        <div style={{background:C.card,borderRadius:14,padding:20,border:`1.5px solid ${C.accent}40`,marginBottom:16}}>
+                          <SecT>⚙️ 개인 수업 일정 설정</SecT>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:12}}>
+                            <div>
+                              <label style={{fontSize:11,fontWeight:700,color:C.textMid,display:"block",marginBottom:6}}>수업 요일</label>
+                              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                                {WEEKDAY_NAMES.map((d,i)=>(
+                                  <button key={i} onClick={()=>updSt(selectedId,s=>({...s,info:{...s.info,classSchedule:{...(s.info.classSchedule||{}),weekday:i}}}))} style={{padding:"4px 8px",borderRadius:6,border:`1.5px solid ${(student.info.classSchedule?.weekday??6)===i?C.blue:C.border}`,background:(student.info.classSchedule?.weekday??6)===i?C.blue:C.card,color:(student.info.classSchedule?.weekday??6)===i?"#fff":C.textMid,fontWeight:700,cursor:"pointer",fontSize:11}}>{d}</button>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <label style={{fontSize:11,fontWeight:700,color:C.textMid,display:"block",marginBottom:6}}>수업 시간</label>
+                              <input type="time" value={student.info.classSchedule?.time||"09:00"} onChange={e=>updSt(selectedId,s=>({...s,info:{...s.info,classSchedule:{...(s.info.classSchedule||{}),time:e.target.value}}}))} style={{padding:"7px 12px",borderRadius:8,border:`1.5px solid ${C.border}`,fontSize:12,outline:"none",fontWeight:700,color:C.navy}}/>
+                            </div>
+                            <div>
+                              <label style={{fontSize:11,fontWeight:700,color:C.textMid,display:"block",marginBottom:6}}>첫 수업 날짜</label>
+                              <input type="date" value={student.info.classSchedule?.startDate||"2026-04-04"} min="2026-04-01" max="2026-09-12" onChange={e=>updSt(selectedId,s=>({...s,info:{...s.info,classSchedule:{...(s.info.classSchedule||{}),startDate:e.target.value}}}))} style={{padding:"7px 12px",borderRadius:8,border:`1.5px solid ${C.border}`,fontSize:12,outline:"none",color:C.navy}}/>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {/* 반 일정 없으면 안내 */}
+                      {!isIndividual&&!sched&&!isReadOnly&&(
+                        <div style={{background:"#FEF9EC",border:`1px solid ${C.accent}44`,borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12,color:C.warn,fontWeight:700}}>
+                          ⚠️ {student.info.className} 수업 일정이 없어요. ⚙️ 설정 → 📅 수업 일정에서 먼저 설정해주세요.
+                        </div>
+                      )}
+                      {/* 출석 리스트 */}
+                      <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:16}}>
+                        <SecT>📅 출석 현황 (1주차 ~ 시험날) {sched&&<span style={{fontSize:11,color:C.textLight,fontWeight:400}}>{WEEKDAY_NAMES[sched.weekday??6]}요일 {sched.time||""} · 총 {dates.length}회</span>}</SecT>
+                        <AttendList classDates={[...dates, ...(dates.includes(EXAM_DATE)?[]:[EXAM_DATE])]} attend={student.attend||{}} onAttendChange={isReadOnly?()=>{}:(att)=>updSt(selectedId,s=>({...s,attend:att}))} readOnly={isReadOnly}/>
+                      </div>
+                      {/* 청강/보강 */}
+                      <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:16}}>
+                        <SecT>🔄 청강 / 보강 기록</SecT>
+                        <MakeupSection makeups={student.makeups||[]} onChange={isReadOnly?()=>{}:updMakeups} allClasses={allClasses} classDates={dates} readOnly={isReadOnly}/>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {visibleSess.length===0?<div style={{textAlign:"center",padding:"60px 0",color:C.textLight,fontSize:16}}>🎉 모든 교시를 합격하셨습니다!</div>:(
                   <div>
                     <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
