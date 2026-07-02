@@ -52,6 +52,7 @@ const makeStudent = (id,name="새 수강생") => ({
   info:{className:"A반",name,birthYear:"",isPreArch:false,isWorking:false,passedSessions:[],goal:""},
   attend:{},
   subjects:Object.fromEntries(allSubIds().map(sid=>[sid,makeSubData()])),
+  counseling:[],
 });
 
 const SEED = [
@@ -454,6 +455,245 @@ function ExamSec({subjectData,onChange}) {
   );
 }
 
+
+// ── 상담 기록 섹션 ────────────────────────────────────────
+const SUBJECTS_ALL = ["분석조닝문제","배치문제","평면문제","구조문제","단면문제","전반적"];
+function CounselingSection({counseling=[], onChange, readOnly}) {
+  const [editing, setEditing] = useState(null); // null | 'new' | {id}
+  const [form, setForm] = useState({});
+
+  const newRecord = () => {
+    const f = {id:uid(), date:new Date().toISOString().slice(0,10), session:"1차", hardest:"", easiest:"", dailyHours:"", weeklyHours:"", goal:"", notes:""};
+    setForm(f); setEditing("new");
+  };
+  const editRecord = (r) => { setForm({...r}); setEditing(r.id); };
+  const saveRecord = () => {
+    if(editing==="new") onChange([...counseling, form]);
+    else onChange(counseling.map(r=>r.id===editing?form:r));
+    setEditing(null); setForm({});
+  };
+  const delRecord = (id) => onChange(counseling.filter(r=>r.id!==id));
+  const upd = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const sessions = ["1차","2차","3차","4차","5차","6차","7차","8차","9차","10차"];
+
+  return (
+    <div>
+      {!readOnly && (
+        <button onClick={newRecord} style={{background:C.blue,color:"#fff",border:"none",borderRadius:9,padding:"9px 18px",fontWeight:700,cursor:"pointer",fontSize:13,marginBottom:16}}>
+          + 상담 기록 추가
+        </button>
+      )}
+
+      {counseling.length===0 && <div style={{textAlign:"center",padding:"30px 0",color:C.textLight,fontSize:13}}>아직 상담 기록이 없어요</div>}
+
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {[...counseling].sort((a,b)=>b.date.localeCompare(a.date)).map(r => (
+          <div key={r.id} style={{background:C.bg,borderRadius:13,padding:16,border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+              <span style={{background:C.navy,color:C.accent,borderRadius:6,padding:"2px 10px",fontSize:12,fontWeight:800}}>{r.session}</span>
+              <span style={{fontSize:13,fontWeight:700,color:C.navy}}>{r.date}</span>
+              {!readOnly && (
+                <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+                  <button onClick={()=>editRecord(r)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 10px",cursor:"pointer",fontSize:11,color:C.textMid}}>✏️ 수정</button>
+                  <button onClick={()=>delRecord(r.id)} style={{background:"none",border:`1px solid ${C.danger}44`,borderRadius:7,padding:"4px 10px",cursor:"pointer",fontSize:11,color:C.danger}}>삭제</button>
+                </div>
+              )}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,marginBottom:r.notes?10:0}}>
+              {r.hardest&&<div style={{background:"#FEF2F2",borderRadius:8,padding:"8px 12px"}}><div style={{fontSize:10,color:C.danger,fontWeight:700,marginBottom:2}}>😓 어려운 과목</div><div style={{fontSize:13,color:C.text,fontWeight:600}}>{r.hardest}</div></div>}
+              {r.easiest&&<div style={{background:"#ECFDF5",borderRadius:8,padding:"8px 12px"}}><div style={{fontSize:10,color:C.success,fontWeight:700,marginBottom:2}}>😊 쉬운 과목</div><div style={{fontSize:13,color:C.text,fontWeight:600}}>{r.easiest}</div></div>}
+              {r.dailyHours&&<div style={{background:C.bg,borderRadius:8,padding:"8px 12px",border:`1px solid ${C.border}`}}><div style={{fontSize:10,color:C.textLight,fontWeight:700,marginBottom:2}}>⏰ 일 공부시간</div><div style={{fontSize:13,color:C.text,fontWeight:600}}>{r.dailyHours}시간</div></div>}
+              {r.weeklyHours&&<div style={{background:C.bg,borderRadius:8,padding:"8px 12px",border:`1px solid ${C.border}`}}><div style={{fontSize:10,color:C.textLight,fontWeight:700,marginBottom:2}}>📅 주 공부시간</div><div style={{fontSize:13,color:C.text,fontWeight:600}}>{r.weeklyHours}시간</div></div>}
+              {r.goal&&<div style={{background:"#EBF0FB",borderRadius:8,padding:"8px 12px"}}><div style={{fontSize:10,color:C.blue,fontWeight:700,marginBottom:2}}>🎯 목표</div><div style={{fontSize:13,color:C.text,fontWeight:600}}>{r.goal}</div></div>}
+            </div>
+            {r.notes&&<div style={{background:"#fff",borderRadius:8,padding:"10px 12px",border:`1px solid ${C.border}`,fontSize:13,color:C.text,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{r.notes}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* 편집 모달 */}
+      {editing && (
+        <div style={{position:"fixed",inset:0,background:"#00000088",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:C.card,borderRadius:20,width:"100%",maxWidth:500,maxHeight:"88vh",overflow:"auto",padding:28,boxShadow:"0 24px 80px #0008"}}>
+            <div style={{fontSize:17,fontWeight:900,color:C.navy,marginBottom:20}}>{editing==="new"?"새 상담 기록":"상담 기록 수정"}</div>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <label style={{fontSize:12,fontWeight:700,color:C.textMid,display:"block",marginBottom:5}}>상담 차수</label>
+                  <select value={form.session||""} onChange={e=>upd("session",e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none"}}>
+                    {sessions.map(s=><option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{fontSize:12,fontWeight:700,color:C.textMid,display:"block",marginBottom:5}}>날짜</label>
+                  <input type="date" value={form.date||""} onChange={e=>upd("date",e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <label style={{fontSize:12,fontWeight:700,color:C.danger,display:"block",marginBottom:5}}>😓 어려운 과목</label>
+                  <select value={form.hardest||""} onChange={e=>upd("hardest",e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none"}}>
+                    <option value="">선택</option>
+                    {SUBJECTS_ALL.map(s=><option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{fontSize:12,fontWeight:700,color:C.success,display:"block",marginBottom:5}}>😊 쉬운 과목</label>
+                  <select value={form.easiest||""} onChange={e=>upd("easiest",e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none"}}>
+                    <option value="">선택</option>
+                    {SUBJECTS_ALL.map(s=><option key={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                {[["일 공부시간","dailyHours","예: 3"],["주 공부시간","weeklyHours","예: 20"]].map(([lbl,key,ph])=>(
+                  <div key={key}>
+                    <label style={{fontSize:12,fontWeight:700,color:C.textMid,display:"block",marginBottom:5}}>⏰ {lbl} (시간)</label>
+                    <input type="number" min="0" max="24" value={form[key]||""} onChange={e=>upd(key,e.target.value)} placeholder={ph}
+                      style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <label style={{fontSize:12,fontWeight:700,color:C.blue,display:"block",marginBottom:5}}>🎯 수강생 목표</label>
+                <input value={form.goal||""} onChange={e=>upd("goal",e.target.value)} placeholder="예: 2026년 1회 합격"
+                  style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:12,fontWeight:700,color:C.textMid,display:"block",marginBottom:5}}>📝 상담 메모</label>
+                <textarea value={form.notes||""} onChange={e=>upd("notes",e.target.value)} placeholder="상담 내용, 특이사항, 개선점 등..." rows={4}
+                  style={{width:"100%",padding:"10px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:20}}>
+              <button onClick={saveRecord} style={{flex:1,background:C.navy,color:"#fff",border:"none",borderRadius:11,padding:13,fontWeight:800,cursor:"pointer",fontSize:14}}>저장</button>
+              <button onClick={()=>{setEditing(null);setForm({});}} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:11,padding:"13px 18px",cursor:"pointer",color:C.textMid,fontSize:13}}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 학습 통계 그래프 (대시보드) ──────────────────────────
+function StatsView({students, classTeachers}) {
+  const [viewMode, setViewMode] = useState("class"); // class | teacher
+  // 반별 통계
+  const classGroups = {};
+  students.forEach(s => {
+    const cls = s.info.className;
+    if(!classGroups[cls]) classGroups[cls] = [];
+    classGroups[cls].push(s);
+  });
+
+  const classData = Object.entries(classGroups).map(([cls, ss]) => {
+    const avgHw = ss.reduce((sum,s)=>{ const ids=allSubIds().filter(sid=>!isPassed(sid,s.info)); if(!ids.length)return sum+100; return sum+pct(ids.reduce((a,sid)=>a+calcHw(s.subjects[sid]||makeSubData()),0),HW_TOTAL*ids.length); },0) / ss.length;
+    const avgAtt = ss.reduce((sum,s)=>{ const a=calcAttend(s.attend||{}); return sum+pct(a.out,20); },0) / ss.length;
+    const counseled = ss.filter(s=>s.counseling?.length>0).length;
+    return { name:cls.length>4?cls.slice(0,4):cls, cls, 숙제달성률:Math.round(avgHw), 출석률:Math.round(avgAtt), 수강생수:ss.length, 상담완료:counseled, teacher:classTeachers[cls]||"" };
+  }).sort((a,b)=>a.name.localeCompare(b.name,"ko"));
+
+  // 선생님별 통계
+  const teacherGroups = {};
+  students.forEach(s => {
+    const t = classTeachers[s.info.className]||"미배정";
+    if(!teacherGroups[t]) teacherGroups[t] = [];
+    teacherGroups[t].push(s);
+  });
+  const teacherData = Object.entries(teacherGroups).map(([t,ss])=>({
+    name:t,
+    수강생수:ss.length,
+    평균숙제:Math.round(ss.reduce((sum,s)=>{const ids=allSubIds().filter(sid=>!isPassed(sid,s.info));if(!ids.length)return sum+100;return sum+pct(ids.reduce((a,sid)=>a+calcHw(s.subjects[sid]||makeSubData()),0),HW_TOTAL*ids.length);},0)/ss.length),
+    평균출석:Math.round(ss.reduce((sum,s)=>{const a=calcAttend(s.attend||{});return sum+pct(a.out,20);},0)/ss.length),
+  }));
+
+  const COLORS=["#2B58B8","#C8A655","#1E9E6B","#DC2626","#7C3AED","#D97706","#059669"];
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:20}}>
+        {[["class","반별 통계"],["teacher","담당 건축사별"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setViewMode(k)} style={{padding:"8px 18px",borderRadius:10,border:`1.5px solid ${viewMode===k?C.blue:C.border}`,background:viewMode===k?C.blue:C.card,color:viewMode===k?"#fff":C.textMid,fontWeight:700,cursor:"pointer",fontSize:13}}>{l}</button>
+        ))}
+      </div>
+
+      {viewMode==="class"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:20}}>
+          <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:14,fontWeight:800,color:C.navy,marginBottom:16}}>📊 반별 숙제 달성률 / 출석률</div>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={classData} margin={{top:5,right:10,left:-10,bottom:30}}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+                <XAxis dataKey="name" tick={{fontSize:10,fill:C.textMid}} angle={-30} textAnchor="end"/>
+                <YAxis domain={[0,100]} tick={{fontSize:10}} tickFormatter={v=>v+"%"}/>
+                <Tooltip formatter={(v)=>v+"%"}/>
+                <Legend wrapperStyle={{fontSize:11}}/>
+                <Bar dataKey="숙제달성률" fill={C.blue} radius={[4,4,0,0]}/>
+                <Bar dataKey="출석률" fill={C.success} radius={[4,4,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
+            {classData.map((d,i)=>(
+              <div key={d.cls} style={{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.border}`}}>
+                <div style={{fontSize:13,fontWeight:800,color:C.navy,marginBottom:2}}>{d.cls}</div>
+                {d.teacher&&<div style={{fontSize:10,color:C.textLight,marginBottom:8}}>👨‍🏫 {d.teacher}</div>}
+                <div style={{fontSize:12,color:C.textMid}}>수강생 <strong>{d.수강생수}</strong>명</div>
+                <div style={{fontSize:12,color:C.blue}}>숙제 <strong>{d.숙제달성률}%</strong></div>
+                <div style={{fontSize:12,color:C.success}}>출석 <strong>{d.출석률}%</strong></div>
+                <div style={{fontSize:12,color:C.accent}}>상담 <strong>{d.상담완료}</strong>명</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {viewMode==="teacher"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:20}}>
+          <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:14,fontWeight:800,color:C.navy,marginBottom:16}}>👨‍🏫 담당 건축사별 수강생 현황</div>
+            <div style={{display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
+              <PieChart width={200} height={200}>
+                <Pie data={teacherData} dataKey="수강생수" nameKey="name" cx={100} cy={100} outerRadius={80} label={({name,수강생수})=>name.length<4?`${name}(${수강생수})`:""}>
+                  {teacherData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                </Pie>
+                <Tooltip/>
+              </PieChart>
+              <div style={{flex:1,minWidth:200}}>
+                {teacherData.map((d,i)=>(
+                  <div key={d.name} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,background:C.bg,borderRadius:9,padding:"9px 14px"}}>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:COLORS[i%COLORS.length],flexShrink:0}}/>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:700,color:C.navy}}>{d.name}</div>
+                      <div style={{fontSize:11,color:C.textMid}}>{d.수강생수}명 · 숙제 {d.평균숙제}% · 출석 {d.평균출석}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:14,fontWeight:800,color:C.navy,marginBottom:16}}>📈 담당 건축사별 평균 달성률</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={teacherData} margin={{top:5,right:10,left:-10,bottom:5}}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+                <XAxis dataKey="name" tick={{fontSize:11,fill:C.textMid}}/>
+                <YAxis domain={[0,100]} tick={{fontSize:11}} tickFormatter={v=>v+"%"}/>
+                <Tooltip formatter={(v)=>v+"%"}/>
+                <Legend wrapperStyle={{fontSize:11}}/>
+                <Bar dataKey="평균숙제" fill={C.blue} radius={[4,4,0,0]}/>
+                <Bar dataKey="평균출석" fill={C.success} radius={[4,4,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 공유 모달 ─────────────────────────────────────────────
 function ShareModal({studentId,studentName,onClose}) {
   return (
@@ -583,6 +823,8 @@ export default function App() {
   const [importId,setImportId]=useState("");
   const [bulkLoading,setBulkLoading]=useState(false);
   const [showBulkDone,setShowBulkDone]=useState(false);
+  const [detailTab,setDetailTab]=useState("study"); // study | counseling | stats
+  const [showStats,setShowStats]=useState(false);
   const [classFilter,setClassFilter]=useState("전체");
   const [teacherFilter,setTeacherFilter]=useState("전체");
   const [searchQuery,setSearchQuery]=useState("");
@@ -695,6 +937,18 @@ export default function App() {
         </div>
       </header>
 
+      {/* 모드 표시 배너 */}
+      {isReadOnly && (
+        <div style={{background:C.warn,padding:"8px 16px",textAlign:"center",fontSize:12,fontWeight:700,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+          👁 결과서 보기 전용 모드 — 수정 불가
+          <button onClick={()=>{setIsLoggedIn(false);}} style={{background:"#ffffff33",border:"none",borderRadius:6,padding:"2px 10px",color:"#fff",cursor:"pointer",fontSize:11,fontWeight:700}}>선생님 로그인</button>
+        </div>
+      )}
+      {!isReadOnly && (
+        <div style={{background:C.success,padding:"6px 16px",textAlign:"center",fontSize:11,fontWeight:700,color:"#fff"}}>
+          ✏️ 선생님 편집 모드 — 수강생 정보를 자유롭게 수정할 수 있습니다
+        </div>
+      )}
       <main style={{maxWidth:1100,margin:"0 auto",padding:"20px 16px"}}>
         {view==="dashboard"&&(
           <div>
@@ -703,6 +957,10 @@ export default function App() {
               <div style={{fontSize:14,color:C.textMid,marginTop:2}}>총 {students.length}명 · Supabase 자동저장</div>
             </div>
             {loadStatus==="error"&&<div style={{background:"#FEF2F2",border:`1px solid ${C.danger}`,borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:13,color:C.danger}}>⚠️ DB 연결 오류</div>}
+            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+              <button onClick={()=>setShowStats(p=>!p)} style={{background:showStats?C.navy:C.card,border:`1.5px solid ${C.border}`,borderRadius:10,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13,color:showStats?"#fff":C.textMid}}>{showStats?"✕ 통계 닫기":"📊 학습 통계"}</button>
+            </div>
+            {showStats&&<div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:20}}><StatsView students={students} classTeachers={classTeachers}/></div>}
             {!isReadOnly&&(
               <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
                 <button onClick={addStudent} style={{background:C.blue,color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>+ 수강생 추가</button>
@@ -752,7 +1010,7 @@ export default function App() {
                   <div key={s.id} style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:14,padding:18,position:"relative",cursor:"pointer",transition:"all .2s"}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;e.currentTarget.style.boxShadow=`0 4px 18px ${C.blue}22`;}}
                     onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow="none";}}
-                    onClick={()=>{setSelectedId(s.id);setView(isReadOnly?"report":"detail");setShowInfo(false);const fv=SESSIONS.find(sess=>!sess.subs.every(sub=>isPassed(sub.id,s.info)));if(fv){setActiveSess(fv.id);setActiveSub(fv.subs[0].id);}}}>
+                    onClick={()=>{setSelectedId(s.id);setView(isReadOnly?"report":"detail");setShowInfo(!isReadOnly);const fv=SESSIONS.find(sess=>!sess.subs.every(sub=>isPassed(sub.id,s.info)));if(fv){setActiveSess(fv.id);setActiveSub(fv.subs[0].id);}}}>
                     {!isReadOnly&&<button onClick={e=>{e.stopPropagation();delStudent(s.id);}} style={{position:"absolute",top:10,right:10,background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.textLight}}>×</button>}
                     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                       <div style={{width:40,height:40,borderRadius:11,background:C.navy,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>👤</div>
@@ -787,7 +1045,11 @@ export default function App() {
                   {(student.info.passedSessions||[]).map(sid=><Bdg key={sid} color={C.passed}>{SESSIONS.find(s=>s.id===sid)?.label} 합격</Bdg>)}
                 </div>
               </div>
-              {!isReadOnly&&<button onClick={()=>setShowInfo(p=>!p)} style={{background:showInfo?C.navy:C.card,border:`1.5px solid ${showInfo?C.navy:C.border}`,borderRadius:9,padding:"8px 16px",cursor:"pointer",fontWeight:600,color:showInfo?"#fff":C.textMid,fontSize:12}}>{showInfo?"▲ 닫기":"✏️ 인적사항"}</button>}
+              {!isReadOnly&&(
+                <button onClick={()=>setShowInfo(p=>!p)} style={{background:showInfo?C.navy:C.blue,border:"none",borderRadius:9,padding:"9px 18px",cursor:"pointer",fontWeight:700,color:"#fff",fontSize:13}}>
+                  {showInfo?"▲ 닫기":"✏️ 인적사항 수정"}
+                </button>
+              )}
             </div>
             {showInfo&&!isReadOnly&&(
               <div style={{background:C.card,borderRadius:14,padding:24,border:`1.5px solid ${C.accent}60`,marginBottom:20}}>
@@ -795,8 +1057,24 @@ export default function App() {
                 <InfoForm info={student.info} onChange={updInfo} allClasses={allClasses}/>
               </div>
             )}
+            {/* 상세 탭 */}
+            <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+              {[["study","📚 학습 기록"],["counseling","💬 상담 기록"],].map(([k,l])=>(
+                <button key={k} onClick={()=>setDetailTab(k)} style={{padding:"9px 20px",borderRadius:10,border:`1.5px solid ${detailTab===k?C.blue:C.border}`,background:detailTab===k?C.blue:C.card,color:detailTab===k?"#fff":C.textMid,fontWeight:700,cursor:"pointer",fontSize:13}}>{l}</button>
+              ))}
+            </div>
+
+            {detailTab==="counseling"&&(
+              <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:20}}>
+                <SecT>💬 상담 기록</SecT>
+                <CounselingSection counseling={student.counseling||[]} readOnly={isReadOnly}
+                  onChange={records=>updSt(selectedId,s=>({...s,counseling:records}))}/>
+              </div>
+            )}
+
+            {detailTab==="study"&&<div>
             <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:20}}>
-              <SecT>📅 출석률 (20주) — 전체 공통</SecT>
+              <SecT>📅 출석률 (20주) — 전체 공통{!isReadOnly&&<span style={{fontSize:11,color:C.success,fontWeight:600,marginLeft:8}}>✏️ 수정 가능</span>}</SecT>
               <AttendSec attend={student.attend||{}} onChange={isReadOnly?()=>{}:(w,state)=>setAttend(w,state)}/>
             </div>
             {visibleSess.length===0?(
@@ -827,20 +1105,24 @@ export default function App() {
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:20}}>
                         <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`}}>
-                          <SecT>📝 숙제 이행률 (총 {HW_TOTAL}문제)</SecT>
+                          <SecT>📝 숙제 이행률 (총 {HW_TOTAL}문제){!isReadOnly&&<span style={{fontSize:11,color:C.success,fontWeight:600,marginLeft:8}}>✏️ 수정 가능</span>}</SecT>
                           <HwAcc subjectId={activeSub} subjectData={curSubData} onToggle={isReadOnly?()=>{}:toggleHw}/>
                         </div>
                         <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`}}>
-                          <SecT>🎯 시험 성적</SecT>
+                          <SecT>🎯 시험 성적{!isReadOnly&&<span style={{fontSize:11,color:C.success,fontWeight:600,marginLeft:8}}>✏️ 수정 가능</span>}</SecT>
                           <ExamSec subjectData={curSubData} onChange={isReadOnly?()=>{}:(data)=>setSubData(activeSub,data)}/>
                         </div>
-                        {!isReadOnly&&(
-                          <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`}}>
-                            <SecT>✍️ 담당 건축사 종합평가</SecT>
+                        <div style={{background:C.card,borderRadius:14,padding:24,border:`1px solid ${C.border}`}}>
+                          <SecT>✍️ 담당 건축사 종합평가</SecT>
+                          {isReadOnly ? (
+                            <div style={{background:C.bg,borderRadius:10,padding:14,fontSize:14,color:C.text,lineHeight:1.7,minHeight:60,whiteSpace:"pre-wrap"}}>
+                              {curSubData?.comment||<span style={{color:C.textLight}}>작성된 평가 없음</span>}
+                            </div>
+                          ) : (
                             <textarea value={curSubData?.comment||""} onChange={e=>setComment(activeSub,e.target.value)} placeholder="수강생에 대한 종합 의견을 입력하세요..." rows={5}
-                              style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:14,resize:"vertical",fontFamily:"inherit",lineHeight:1.7,color:C.text,outline:"none",boxSizing:"border-box"}}/>
-                          </div>
-                        )}
+                              style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1.5px solid ${C.blue}`,fontSize:14,resize:"vertical",fontFamily:"inherit",lineHeight:1.7,color:C.text,outline:"none",boxSizing:"border-box"}}/>
+                          )}
+                        </div>
                       </div>
                       <div style={{textAlign:"center",marginTop:28}}>
                         <button onClick={()=>setView("report")} style={{background:`linear-gradient(135deg,${C.navy},${C.blue})`,color:"#fff",border:"none",borderRadius:12,padding:"14px 36px",fontSize:16,fontWeight:800,cursor:"pointer"}}>📄 수강생 결과서 보기</button>
@@ -849,6 +1131,7 @@ export default function App() {
                   );
                 })()}
               </div>
+            </div>}  {/* 학습탭 끝 */}
             )}
           </div>
         )}
